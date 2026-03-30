@@ -145,6 +145,57 @@ GOLDEN_CASES = [
         },
         "expected": {"equivalent": True},
     },
+    # --- Phase 2: Regression ---
+    {
+        "case_id": "CAL-STAT-013",
+        "description": "OLS: y = 1 + 2x → R²=1.0, Intercept=1, x=2",
+        "test": "ols_regression",
+        "input": {
+            "X": [[1], [2], [3], [4], [5]],
+            "y": [3, 5, 7, 9, 11],
+            "feature_names": ["x"],
+        },
+        "expected": {"r_squared": 1.0, "intercept": 1.0, "x_coef": 2.0},
+    },
+    {
+        "case_id": "CAL-STAT-014",
+        "description": "Nonlinear exponential: a≈2, b≈0.5",
+        "test": "nonlinear_exp",
+        "input": {},
+        "expected": {"converged": True, "r_squared_gt": 0.99},
+    },
+    # --- Phase 2: Power ---
+    {
+        "case_id": "CAL-STAT-015",
+        "description": "Power t-test: d=0.5, n=64 → power≈0.98",
+        "test": "power_ttest",
+        "input": {"effect_size": 0.5, "n": 64},
+        "expected": {"power_gt": 0.90},
+    },
+    {
+        "case_id": "CAL-STAT-016",
+        "description": "Sample size for mean CI: σ=5, width=1 → n≈97",
+        "test": "sample_size_ci",
+        "input": {"target_width": 1.0, "std": 5.0},
+        "expected": {"n_gt": 80, "n_lt": 120},
+    },
+    # --- Phase 2: Quality ---
+    {
+        "case_id": "CAL-STAT-017",
+        "description": "Attribute capability: 50 defects, 10000 units, 5 opp → DPMO=1000",
+        "test": "attribute_capability",
+        "input": {"defects": 50, "units": 10000, "opportunities": 5},
+        "expected": {"dpmo": 1000.0},
+    },
+    {
+        "case_id": "CAL-STAT-018",
+        "description": "Variance components: 3 groups with huge gap → ICC>0.9",
+        "test": "variance_components",
+        "input": {
+            "groups": {"A": [10, 11, 10, 11, 10], "B": [50, 51, 50, 51, 50], "C": [90, 91, 90, 91, 90]},
+        },
+        "expected": {"icc_gt": 0.9},
+    },
 ]
 
 
@@ -237,6 +288,46 @@ def _run_case(case_id: str, test: str, inp: dict) -> dict:
     elif test == "equivalence":
         r = tost(inp["x1"], inp["x2"], margin=inp["margin"])
         return {"equivalent": r.equivalent}
+
+    # Phase 2: Regression
+    elif test == "ols_regression":
+        from .regression.linear import ols as ols_reg
+        r = ols_reg(inp["X"], inp["y"], feature_names=inp["feature_names"])
+        return {
+            "r_squared": r.r_squared,
+            "intercept": r.coefficients.get("Intercept", 0),
+            "x_coef": r.coefficients.get("x", 0),
+        }
+
+    elif test == "nonlinear_exp":
+        from .regression.nonlinear import curve_fit as nlin_fit
+        import numpy as _np
+        x = _np.linspace(0, 5, 50)
+        y = 2 * _np.exp(0.5 * x) + _np.random.default_rng(42).normal(0, 0.1, 50)
+        r = nlin_fit(x, y, model="exponential")
+        return {"converged": r.converged, "r_squared": r.r_squared}
+
+    # Phase 2: Power
+    elif test == "power_ttest":
+        from .power.sample_size import power_t_test
+        r = power_t_test(effect_size=inp["effect_size"], n=inp["n"])
+        return {"power": r.power}
+
+    elif test == "sample_size_ci":
+        from .power.sample_size import sample_size_for_ci
+        n = sample_size_for_ci(target_width=inp["target_width"], std=inp["std"])
+        return {"n": n}
+
+    # Phase 2: Quality
+    elif test == "attribute_capability":
+        from .quality.capability import attribute_capability as attr_cap
+        r = attr_cap(inp["defects"], inp["units"], inp["opportunities"])
+        return {"dpmo": r.dpmo}
+
+    elif test == "variance_components":
+        from .quality.variance_components import one_way_random
+        r = one_way_random(inp["groups"])
+        return {"icc": r.icc}
 
     raise ValueError(f"Unknown test: {test}")
 
