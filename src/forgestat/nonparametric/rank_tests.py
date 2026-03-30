@@ -284,6 +284,7 @@ def sign_test(
         statistic=float(above),
         p_value=p_val,
         alpha=alpha,
+        significant=bool(p_val < alpha),
         extra={
             "above": above,
             "below": below,
@@ -291,5 +292,78 @@ def sign_test(
             "n_effective": n_eff,
             "sample_median": float(np.median(x)),
             "hypothesized_median": median0,
+        },
+    )
+
+
+def runs_test(
+    data: list[float] | np.ndarray,
+    cutoff: float | None = None,
+    alpha: float = 0.05,
+) -> TestResult:
+    """Wald-Wolfowitz runs test for randomness.
+
+    Tests whether the sequence of values above/below a cutoff is random.
+    H₀: The sequence is random.
+
+    Args:
+        data: Sequence of values.
+        cutoff: Threshold (default: median). Values above = "+", below = "-".
+        alpha: Significance level.
+
+    Returns:
+        TestResult — significant means non-random (clustering or alternation).
+    """
+    x = np.asarray(data, dtype=float)
+    x = x[np.isfinite(x)]
+    n = len(x)
+
+    if n < 10:
+        raise ValueError(f"Need at least 10 observations for runs test, got {n}")
+
+    if cutoff is None:
+        cutoff = float(np.median(x))
+
+    # Classify above/below
+    signs = x > cutoff
+    n_plus = int(np.sum(signs))
+    n_minus = n - n_plus
+
+    if n_plus == 0 or n_minus == 0:
+        return TestResult(
+            test_name="Runs test", statistic=0.0, p_value=1.0, alpha=alpha,
+            extra={"n_plus": n_plus, "n_minus": n_minus, "n_runs": 0},
+        )
+
+    # Count runs
+    runs = 1
+    for i in range(1, n):
+        if signs[i] != signs[i - 1]:
+            runs += 1
+
+    # Expected runs and variance under H0
+    mu_r = 1 + 2 * n_plus * n_minus / n
+    if n > 1:
+        var_r = (2 * n_plus * n_minus * (2 * n_plus * n_minus - n)) / (n ** 2 * (n - 1))
+    else:
+        var_r = 0
+
+    if var_r > 0:
+        z = (runs - mu_r) / math.sqrt(var_r)
+        p_val = 2 * (1 - stats.norm.cdf(abs(z)))
+    else:
+        z = 0.0
+        p_val = 1.0
+
+    return TestResult(
+        test_name="Runs test",
+        statistic=float(z),
+        p_value=float(p_val),
+        alpha=alpha,
+        extra={
+            "n_runs": runs,
+            "expected_runs": float(mu_r),
+            "n_plus": n_plus,
+            "n_minus": n_minus,
         },
     )

@@ -277,6 +277,68 @@ GOLDEN_CASES = [
         },
         "expected": {"mean_diff": -2.0},
     },
+    # --- Phase 5: Time series ---
+    {
+        "case_id": "CAL-STAT-028",
+        "description": "ADF: white noise is stationary",
+        "test": "adf_stationarity",
+        "input": {},
+        "expected": {"is_stationary": True},
+    },
+    {
+        "case_id": "CAL-STAT-029",
+        "description": "ARIMA(1,1,0) forecast produces CIs",
+        "test": "arima_forecast",
+        "input": {},
+        "expected": {"n_forecast_gt": 0, "has_ci": True},
+    },
+    {
+        "case_id": "CAL-STAT-030",
+        "description": "Decomposition: seasonal data → seasonal strength > 0.5",
+        "test": "decomposition",
+        "input": {},
+        "expected": {"seasonal_strength_gt": 0.5, "trend_direction": "upward"},
+    },
+    {
+        "case_id": "CAL-STAT-031",
+        "description": "PELT detects shift at index ~50",
+        "test": "pelt_changepoint",
+        "input": {},
+        "expected": {"n_changepoints_gt": 0},
+    },
+    {
+        "case_id": "CAL-STAT-032",
+        "description": "Granger causality: lagged X causes Y",
+        "test": "granger",
+        "input": {},
+        "expected": {"x_causes_y": True},
+    },
+    {
+        "case_id": "CAL-STAT-033",
+        "description": "Anomaly scoring detects injected spike",
+        "test": "anomaly_score",
+        "input": {},
+        "expected": {"spike_detected": True},
+    },
+    # --- Phase 5: Parity gaps ---
+    {
+        "case_id": "CAL-STAT-034",
+        "description": "Repeated measures ANOVA: 3 conditions, p < 0.001",
+        "test": "repeated_measures",
+        "input": {
+            "Baseline": [10, 12, 11, 13, 14, 15, 12, 11],
+            "Treatment1": [15, 17, 16, 18, 19, 20, 17, 16],
+            "Treatment2": [20, 22, 21, 23, 24, 25, 22, 21],
+        },
+        "expected": {"significant": True, "n_conditions": 3},
+    },
+    {
+        "case_id": "CAL-STAT-035",
+        "description": "Runs test: clustered data is non-random",
+        "test": "runs_test",
+        "input": {"data": [1] * 50 + [10] * 50},
+        "expected": {"significant": True},
+    },
 ]
 
 
@@ -470,6 +532,71 @@ def _run_case(case_id: str, test: str, inp: dict) -> dict:
         from .msa.agreement import bland_altman as run_ba
         r = run_ba(inp["m1"], inp["m2"])
         return {"mean_diff": r.mean_diff}
+
+    # Phase 5: Time series
+    elif test == "adf_stationarity":
+        from .timeseries.stationarity import adf_test
+        import numpy as _np
+        data = _np.random.default_rng(42).normal(0, 1, 200).tolist()
+        r = adf_test(data)
+        return {"is_stationary": r.is_stationary}
+
+    elif test == "arima_forecast":
+        from .timeseries.forecasting import arima as run_arima
+        import numpy as _np
+        data = _np.cumsum(_np.random.default_rng(42).normal(0.1, 1, 100)).tolist()
+        r = run_arima(data, order=(1, 1, 0), forecast_steps=5)
+        has_ci = all(pt.ci_lower < pt.predicted < pt.ci_upper for pt in r.forecast)
+        return {"n_forecast": len(r.forecast), "has_ci": has_ci}
+
+    elif test == "decomposition":
+        from .timeseries.decomposition import classical_decompose
+        import numpy as _np
+        n = 120
+        t = _np.arange(n)
+        data = (100 + 0.5 * t + 10 * _np.sin(2 * _np.pi * t / 12) + _np.random.default_rng(42).normal(0, 1, n)).tolist()
+        r = classical_decompose(data, period=12)
+        return {"seasonal_strength": r.seasonal_strength, "trend_direction": r.trend_direction}
+
+    elif test == "pelt_changepoint":
+        from .timeseries.changepoint import pelt as run_pelt
+        import numpy as _np
+        rng = _np.random.default_rng(42)
+        data = _np.concatenate([rng.normal(10, 1, 50), rng.normal(20, 1, 50)]).tolist()
+        r = run_pelt(data, min_size=10)
+        return {"n_changepoints": len(r.changepoints)}
+
+    elif test == "granger":
+        from .timeseries.causality import granger_causality
+        import numpy as _np
+        rng = _np.random.default_rng(42)
+        n = 200
+        x = rng.normal(0, 1, n)
+        y = _np.zeros(n)
+        for i in range(2, n):
+            y[i] = 0.7 * x[i - 2] + rng.normal(0, 0.5)
+        r = granger_causality(x.tolist(), y.tolist(), max_lag=4)
+        return {"x_causes_y": r.x_causes_y}
+
+    elif test == "anomaly_score":
+        from .timeseries.changepoint import anomaly_scores
+        import numpy as _np
+        rng = _np.random.default_rng(42)
+        data = rng.normal(50, 2, 100)
+        data[50] = 100
+        r = anomaly_scores(data.tolist(), window=20, threshold=3.0)
+        return {"spike_detected": 50 in r.anomaly_indices}
+
+    # Phase 5: Parity gaps
+    elif test == "repeated_measures":
+        from .parametric.repeated_measures import repeated_measures_anova
+        r = repeated_measures_anova(inp)
+        return {"significant": r.p_value < 0.05, "n_conditions": r.n_conditions}
+
+    elif test == "runs_test":
+        from .nonparametric.rank_tests import runs_test as rt
+        r = rt(inp["data"])
+        return {"significant": bool(r.p_value < 0.05)}
 
     raise ValueError(f"Unknown test: {test}")
 
