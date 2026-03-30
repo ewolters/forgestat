@@ -239,3 +239,95 @@ def sample_size_for_ci(
         raise ValueError("Provide std (for mean) or proportion")
 
     return max(2, n)
+
+
+def power_z_test(
+    effect_size: float,
+    n: int | None = None,
+    alpha: float = 0.05,
+    power: float | None = None,
+) -> PowerResult:
+    """Power for one-sample Z-test (known sigma, large n).
+
+    Equivalent to power_t_test for large samples. Provided for API completeness.
+    """
+    # Z-test is t-test in the large-n limit
+    return power_t_test(effect_size, n=n, alpha=alpha, power=power, test_type="one_sample")
+
+
+def power_equivalence(
+    effect_size: float,
+    margin: float,
+    n: int | None = None,
+    alpha: float = 0.05,
+    power: float | None = None,
+) -> PowerResult:
+    """Power for TOST equivalence test.
+
+    Args:
+        effect_size: True difference (Cohen's d scale).
+        margin: Equivalence margin (Cohen's d scale).
+        n: Sample size per group.
+        alpha: Significance level.
+        power: Target power (for sample size computation).
+    """
+    z_a = stats.norm.ppf(1 - alpha)
+
+    if n is not None:
+        se = 1 / math.sqrt(n / 2)
+        # Power ≈ Φ((margin - |δ|) / se - z_α)
+        pw = float(stats.norm.cdf((margin - abs(effect_size)) / se - z_a))
+        return PowerResult(test="equivalence", power=pw, sample_size=n,
+                           alpha=alpha, effect_size=effect_size, detail={"margin": margin})
+
+    elif power is not None:
+        for n_try in range(4, 10000):
+            result = power_equivalence(effect_size, margin, n=n_try, alpha=alpha)
+            if result.power >= power:
+                return PowerResult(test="equivalence", power=result.power, sample_size=n_try,
+                                   alpha=alpha, effect_size=effect_size, detail={"margin": margin})
+        return PowerResult(test="equivalence", power=0.0, sample_size=10000,
+                           alpha=alpha, effect_size=effect_size)
+
+    raise ValueError("Provide either n or power")
+
+
+def sample_size_tolerance(
+    coverage: float = 0.95,
+    confidence: float = 0.95,
+    std: float = 1.0,
+    target_width: float | None = None,
+) -> int:
+    """Sample size for a tolerance interval.
+
+    Finds n such that the normal tolerance interval k-factor achieves
+    the desired coverage at the given confidence level.
+
+    Args:
+        coverage: Proportion of population to cover.
+        confidence: Confidence level.
+        std: Estimated population std (used if target_width specified).
+        target_width: Desired half-width of tolerance interval.
+
+    Returns:
+        Required sample size.
+    """
+    z_p = stats.norm.ppf((1 + coverage) / 2)
+
+    # Search for n where k-factor ≈ z_p (within 10% margin)
+    for n in range(3, 10000):
+        chi2_val = stats.chi2.ppf(1 - confidence, n - 1)
+        if chi2_val <= 0:
+            continue
+        k = z_p * math.sqrt((n - 1) / chi2_val) * math.sqrt(1 + 1 / n)
+
+        if target_width is not None:
+            # Check if k * std ≤ target_width
+            if k * std <= target_width:
+                return n
+        else:
+            # Check if k is close to z_p (within 10%)
+            if k < z_p * 1.10:
+                return n
+
+    return 10000

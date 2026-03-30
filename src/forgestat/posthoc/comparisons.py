@@ -385,3 +385,61 @@ def bonferroni(
         correction="bonferroni",
         group_means=group_means,
     )
+
+
+def scheffe(
+    *groups: list[float] | np.ndarray,
+    labels: list[str] | None = None,
+    alpha: float = 0.05,
+) -> PostHocResult:
+    """Scheffé's test — most conservative omnibus post-hoc.
+
+    Controls family-wise error for ALL possible contrasts (not just pairwise).
+    Uses the F-distribution critical value scaled by (k-1).
+
+    Args:
+        *groups: Two or more groups.
+        labels: Group names.
+        alpha: Significance level.
+    """
+    arrays = [np.asarray(g, dtype=float) for g in groups]
+    arrays = [a[np.isfinite(a)] for a in arrays]
+    names = labels or [f"Group {i+1}" for i in range(len(arrays))]
+    k = len(arrays)
+
+    all_n = [len(a) for a in arrays]
+    n_total = sum(all_n)
+    df_within = n_total - k
+    ms_within = sum((len(a) - 1) * float(np.var(a, ddof=1)) for a in arrays) / df_within if df_within > 0 else 0
+
+    group_means = {name: float(np.mean(a)) for name, a in zip(names, arrays)}
+    comparisons = []
+
+    for (i, name_i), (j, name_j) in combinations(enumerate(names), 2):
+        ni, nj = all_n[i], all_n[j]
+        mean_diff = float(np.mean(arrays[i]) - np.mean(arrays[j]))
+        se = math.sqrt(ms_within * (1 / ni + 1 / nj)) if ms_within > 0 else 0
+
+        f_val = (mean_diff ** 2) / (ms_within * (1 / ni + 1 / nj)) if se > 0 else 0
+
+        # p-value from F distribution scaled by (k-1)
+        p_val = float(1 - stats.f.cdf(f_val / (k - 1), k - 1, df_within)) if k > 1 and df_within > 0 else 1.0
+
+        comparisons.append(PostHocComparison(
+            group1=name_i,
+            group2=name_j,
+            mean_diff=mean_diff,
+            se=se,
+            t_or_q=math.sqrt(f_val) if f_val > 0 else 0,
+            p_value=p_val,
+            significant=p_val < alpha,
+            reject=p_val < alpha,
+        ))
+
+    return PostHocResult(
+        test_name="scheffe",
+        comparisons=comparisons,
+        alpha=alpha,
+        correction="scheffe_f",
+        group_means=group_means,
+    )
