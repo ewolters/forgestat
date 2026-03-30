@@ -89,8 +89,8 @@ def describe(
     iqr = q3 - q1
     mn, mx = float(np.min(x)), float(np.max(x))
 
-    skew = float(stats.skew(x)) if n > 2 else 0.0
-    kurt = float(stats.kurtosis(x)) if n > 3 else 0.0  # excess
+    skew = float(stats.skew(x)) if n > 2 and std > 1e-15 else 0.0
+    kurt = float(stats.kurtosis(x)) if n > 3 and std > 1e-15 else 0.0  # excess
     cv = std / abs(mean) * 100 if abs(mean) > 1e-15 else 0.0
 
     # Outliers (IQR)

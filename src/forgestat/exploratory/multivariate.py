@@ -219,7 +219,8 @@ def one_way_manova(
         wilks = float(np.prod(1 / (1 + eigvals)))
     except np.linalg.LinAlgError:
         try:
-            wilks = np.linalg.det(E) / np.linalg.det(E + H)
+            det_eh = np.linalg.det(E + H)
+            wilks = np.linalg.det(E) / det_eh if det_eh != 0 else 0.0
         except Exception:
             wilks = 1.0
 

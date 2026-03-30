@@ -126,7 +126,7 @@ def logistic_regression(
 
     z_stats = np.where(se > 0, beta / se, 0.0)
     p_vals = 2 * (1 - stats.norm.cdf(np.abs(z_stats)))
-    odds_ratios = np.exp(beta)
+    odds_ratios = np.exp(np.clip(beta, -700, 700))
 
     aic = -2 * ll + 2 * p
 
