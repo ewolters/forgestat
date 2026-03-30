@@ -236,6 +236,47 @@ GOLDEN_CASES = [
         },
         "expected": {"significant": True},
     },
+    # --- Phase 4: Exploratory ---
+    {
+        "case_id": "CAL-STAT-024",
+        "description": "Descriptive: 100 values → mean=50.5, n=100",
+        "test": "descriptive",
+        "input": {"data": list(range(1, 101))},
+        "expected": {"mean": 50.5, "n": 100},
+    },
+    {
+        "case_id": "CAL-STAT-025",
+        "description": "Meta-analysis: 5 homogeneous studies → pooled ≈ 0.5",
+        "test": "meta_analysis",
+        "input": {
+            "effects": [0.50, 0.51, 0.49, 0.50, 0.50],
+            "ses": [0.1, 0.1, 0.1, 0.1, 0.1],
+        },
+        "expected": {"pooled_effect_gt": 0.45, "pooled_effect_lt": 0.55},
+    },
+    # --- Phase 4: MSA ---
+    {
+        "case_id": "CAL-STAT-026",
+        "description": "Gage R&R: good gage → %GRR < 10, NDC ≥ 5",
+        "test": "gage_rr",
+        "input": {
+            "measurements": [10.1, 10.0, 10.2, 50.1, 50.0, 50.2, 90.1, 90.0, 90.2,
+                             10.0, 10.1, 10.1, 50.0, 50.1, 50.1, 90.0, 90.1, 90.1],
+            "parts": ["P1"]*3 + ["P2"]*3 + ["P3"]*3 + ["P1"]*3 + ["P2"]*3 + ["P3"]*3,
+            "operators": ["A"]*9 + ["B"]*9,
+        },
+        "expected": {"pct_gage_rr_lt": 10, "ndc_gt": 4},
+    },
+    {
+        "case_id": "CAL-STAT-027",
+        "description": "Bland-Altman: method 2 reads 2 higher → bias = -2",
+        "test": "bland_altman",
+        "input": {
+            "m1": [10, 20, 30, 40, 50],
+            "m2": [12, 22, 32, 42, 52],
+        },
+        "expected": {"mean_diff": -2.0},
+    },
 ]
 
 
@@ -397,6 +438,38 @@ def _run_case(case_id: str, test: str, inp: dict) -> dict:
         from .reliability.survival import log_rank_test
         r = log_rank_test(inp["t1"], [True] * len(inp["t1"]), inp["t2"], [True] * len(inp["t2"]))
         return {"significant": r.p_value < 0.05}
+
+    # Phase 4: Exploratory
+    elif test == "descriptive":
+        from .exploratory.univariate import describe as desc
+        r = desc(inp["data"])
+        return {"mean": r.mean, "n": r.n, "skewness": r.skewness}
+
+    elif test == "pca":
+        from .exploratory.multivariate import pca as run_pca
+        r = run_pca(inp["data"], n_components=inp.get("n_components"))
+        return {"pc1_variance": r.variance_explained[0], "n_components": r.n_components}
+
+    elif test == "meta_analysis":
+        from .exploratory.meta import meta_analysis as run_meta
+        r = run_meta(inp["effects"], inp["ses"], model=inp.get("model", "random"))
+        return {"pooled_effect": r.pooled_effect, "i_squared": r.i_squared}
+
+    # Phase 4: MSA
+    elif test == "gage_rr":
+        from .msa.gage_rr import crossed_gage_rr
+        r = crossed_gage_rr(inp["measurements"], inp["parts"], inp["operators"])
+        return {"pct_gage_rr": r.pct_gage_rr, "ndc": r.ndc}
+
+    elif test == "icc":
+        from .msa.agreement import icc as run_icc
+        r = run_icc(inp["ratings"])
+        return {"icc": r.icc}
+
+    elif test == "bland_altman":
+        from .msa.agreement import bland_altman as run_ba
+        r = run_ba(inp["m1"], inp["m2"])
+        return {"mean_diff": r.mean_diff}
 
     raise ValueError(f"Unknown test: {test}")
 
