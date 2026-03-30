@@ -196,6 +196,46 @@ GOLDEN_CASES = [
         },
         "expected": {"icc_gt": 0.9},
     },
+    # --- Phase 3: Bayesian ---
+    {
+        "case_id": "CAL-STAT-019",
+        "description": "Bayesian t-test: strong evidence against H0 (BF10 > 10)",
+        "test": "bayesian_ttest",
+        "input": {"data": [10, 12, 11, 13, 14, 15, 12, 11, 10, 13], "mu": 0},
+        "expected": {"bf10_gt": 10},
+    },
+    {
+        "case_id": "CAL-STAT-020",
+        "description": "Bayesian proportion: 80/100 → posterior mean ≈ 0.79",
+        "test": "bayesian_proportion",
+        "input": {"successes": 80, "n": 100},
+        "expected": {"posterior_mean_gt": 0.75, "posterior_mean_lt": 0.85},
+    },
+    # --- Phase 3: Reliability ---
+    {
+        "case_id": "CAL-STAT-021",
+        "description": "Weibull fit: shape > 1.5 (wear-out), B10 > 0",
+        "test": "weibull_fit",
+        "input": {},
+        "expected": {"failure_mode": "wear_out", "b10_gt": 0},
+    },
+    {
+        "case_id": "CAL-STAT-022",
+        "description": "Kaplan-Meier: 7 events, median at t=10",
+        "test": "kaplan_meier",
+        "input": {"times": [5, 10, 10, 15, 20, 25, 30]},
+        "expected": {"n_events": 7, "median_survival": 15.0},
+    },
+    {
+        "case_id": "CAL-STAT-023",
+        "description": "Log-rank test: early vs late failures → p < 0.05",
+        "test": "log_rank",
+        "input": {
+            "t1": [5, 10, 15, 20, 25, 30, 35, 40],
+            "t2": [50, 60, 70, 80, 90, 100, 110, 120],
+        },
+        "expected": {"significant": True},
+    },
 ]
 
 
@@ -329,6 +369,35 @@ def _run_case(case_id: str, test: str, inp: dict) -> dict:
         r = one_way_random(inp["groups"])
         return {"icc": r.icc}
 
+    # Phase 3: Bayesian
+    elif test == "bayesian_ttest":
+        from .bayesian.tests import bayesian_ttest_one_sample
+        r = bayesian_ttest_one_sample(inp["data"], mu=inp["mu"])
+        return {"bf10": r.bf10}
+
+    elif test == "bayesian_proportion":
+        from .bayesian.tests import bayesian_proportion as bp
+        r = bp(inp["successes"], inp["n"])
+        return {"posterior_mean": r.posterior_mean}
+
+    # Phase 3: Reliability
+    elif test == "weibull_fit":
+        from .reliability.distributions import weibull_fit as wf
+        import numpy as _np
+        data = _np.random.default_rng(42).weibull(2.5, 100) * 1000
+        r = wf(data.tolist())
+        return {"failure_mode": r.failure_mode, "b10": r.b10_life}
+
+    elif test == "kaplan_meier":
+        from .reliability.survival import kaplan_meier as km
+        r = km(inp["times"])
+        return {"n_events": r.n_events, "median_survival": r.median_survival}
+
+    elif test == "log_rank":
+        from .reliability.survival import log_rank_test
+        r = log_rank_test(inp["t1"], [True] * len(inp["t1"]), inp["t2"], [True] * len(inp["t2"]))
+        return {"significant": r.p_value < 0.05}
+
     raise ValueError(f"Unknown test: {test}")
 
 
@@ -374,6 +443,10 @@ def get_calibration_adapter():
                     key=key[:-3], expected=val, comparison="less_than",
                 ))
             elif isinstance(val, bool):
+                expectations.append(Expectation(
+                    key=key, expected=val, comparison="equals",
+                ))
+            elif isinstance(val, str):
                 expectations.append(Expectation(
                     key=key, expected=val, comparison="equals",
                 ))
