@@ -24,4 +24,5 @@ __all__ = [
     "reliability",
     "msa",
     "timeseries",
+    "intelligence",
 ]
