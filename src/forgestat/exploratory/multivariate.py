@@ -243,7 +243,7 @@ def one_way_manova(
     df_e = n - k
     s = min(p, df_h)
 
-    if wilks == 0.0:
+    if wilks < 1e-15:
         # Perfect separation — extreme significance
         f_stat = 1e6
         df1_f = float(p * df_h)
