@@ -61,14 +61,39 @@ def weibull_fit(
         raise ValueError(f"Need at least 3 failure times, got {n}")
 
     if censored is not None and any(censored):
-        # Simplified censored MLE: fit only uncensored data, note bias
-        cens = np.asarray(censored[:n])
-        uncensored = times[~cens]
-        if len(uncensored) < 3:
+        # Proper censored Weibull MLE via log-likelihood maximization
+        # L = prod(f(t_i) for failures) * prod(R(t_j) for censored)
+        cens = np.asarray(censored[:n], dtype=bool)
+        fail_times = times[~cens]
+        cens_times = times[cens]
+        if len(fail_times) < 3:
             raise ValueError("Need at least 3 uncensored failures")
-        shape, loc, scale = stats.weibull_min.fit(uncensored, floc=0)
+
+        from scipy.optimize import minimize
+
+        def neg_loglik(params):
+            beta, eta = params
+            if beta <= 0 or eta <= 0:
+                return 1e20
+            # Failures: log(f(t)) = log(beta/eta) + (beta-1)*log(t/eta) - (t/eta)^beta
+            ll = 0.0
+            ll += len(fail_times) * (np.log(beta) - beta * np.log(eta))
+            ll += (beta - 1) * np.sum(np.log(fail_times))
+            ll -= np.sum((fail_times / eta) ** beta)
+            # Censored: log(R(t)) = -(t/eta)^beta
+            if len(cens_times) > 0:
+                ll -= np.sum((cens_times / eta) ** beta)
+            return -ll
+
+        # Initial guess from uncensored-only fit
+        s0, _, sc0 = stats.weibull_min.fit(fail_times, floc=0)
+        result = minimize(neg_loglik, [s0, sc0], method='Nelder-Mead',
+                         options={'xatol': 1e-8, 'fatol': 1e-8, 'maxiter': 5000})
+        shape, scale = float(result.x[0]), float(result.x[1])
     else:
         shape, loc, scale = stats.weibull_min.fit(times, floc=0)
+        shape = float(shape)
+        scale = float(scale)
 
     shape = float(shape)
     scale = float(scale)
