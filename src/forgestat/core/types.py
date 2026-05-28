@@ -1,13 +1,28 @@
 """Result dataclasses for all statistical tests.
 
 Every test function returns a typed result — no dicts.
-SVEND's thin layer converts these to its presentation format.
+All result types have .to_dict() for JSON-serializable output.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
+
+
+def _to_dict(obj) -> dict:
+    """Recursive dataclass → dict. Handles nested dataclasses and numpy scalars."""
+    d = asdict(obj)
+    # Convert any numpy scalars that asdict doesn't handle
+    def _clean(v):
+        if isinstance(v, dict):
+            return {k: _clean(val) for k, val in v.items()}
+        if isinstance(v, list):
+            return [_clean(item) for item in v]
+        if hasattr(v, "item"):  # numpy scalar
+            return v.item()
+        return v
+    return _clean(d)
 
 
 @dataclass
@@ -21,6 +36,9 @@ class AssumptionCheck:
     passed: bool = True
     detail: str = ""
     suggestion: str = ""
+
+    def to_dict(self) -> dict:
+        return _to_dict(self)
 
 
 @dataclass
@@ -44,6 +62,9 @@ class TestResult:
 
     def __post_init__(self):
         self.significant = bool(self.p_value < self.alpha)
+
+    def to_dict(self) -> dict:
+        return _to_dict(self)
 
 
 @dataclass
@@ -84,6 +105,9 @@ class Anova2Result:
     residual_ms: float = 0.0
     assumptions: list[AssumptionCheck] = field(default_factory=list)
 
+    def to_dict(self) -> dict:
+        return _to_dict(self)
+
 
 @dataclass
 class Anova2Source:
@@ -106,6 +130,9 @@ class CorrelationResult:
     pairs: list[CorrelationPair] = field(default_factory=list)
     matrix: dict[str, dict[str, float]] = field(default_factory=dict)
     assumptions: list[AssumptionCheck] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        return _to_dict(self)
 
 
 @dataclass
@@ -162,6 +189,9 @@ class EquivalenceResult:
     effect_size: float | None = None
     assumptions: list[AssumptionCheck] = field(default_factory=list)
 
+    def to_dict(self) -> dict:
+        return _to_dict(self)
+
 
 @dataclass
 class RankTestResult(TestResult):
@@ -200,3 +230,6 @@ class PostHocResult:
     correction: str = ""  # "studentized_range", "bonferroni", etc.
     group_means: dict[str, float] = field(default_factory=dict)
     control_group: str | None = None  # for Dunnett
+
+    def to_dict(self) -> dict:
+        return _to_dict(self)
