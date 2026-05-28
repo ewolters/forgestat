@@ -61,16 +61,19 @@ def attribute_plan(
                 if n < best_n:
                     best_n = n
                     best_c = c
-                break
-        if best_n < lot_size:
-            break
+                break  # first feasible n for this c (n increases, so this is optimal for c)
 
     # OC curve
     oc = []
     aoq_vals = []
     defect_rates = np.linspace(0, min(0.2, ltpd * 3), 50)
     for p in defect_rates:
-        pa = float(stats.binom.cdf(best_c, best_n, max(p, 1e-10)))
+        # Hypergeometric for finite lots; binomial for infinite
+        defects_in_lot = max(1, int(p * lot_size))
+        if best_n < lot_size:
+            pa = float(stats.hypergeom.cdf(best_c, lot_size, defects_in_lot, best_n))
+        else:
+            pa = float(stats.binom.cdf(best_c, best_n, max(p, 1e-10)))
         oc.append((float(p), pa))
         if lot_size > best_n:
             aoq = pa * p * (lot_size - best_n) / lot_size
@@ -115,8 +118,8 @@ def variable_plan(
     z_alpha = stats.norm.ppf(1 - producer_risk)
     z_beta = stats.norm.ppf(1 - consumer_risk)
 
-    # Sample size
-    n = math.ceil(((z_alpha + z_beta) / (z_aql - z_ltpd)) ** 2 + 0.5 * z_alpha ** 2)
+    # Sample size (known-sigma Wald-Wolfowitz formula)
+    n = math.ceil(((z_alpha + z_beta) / (z_aql - z_ltpd)) ** 2)
     n = max(2, n)
 
     # k-value (acceptance constant)

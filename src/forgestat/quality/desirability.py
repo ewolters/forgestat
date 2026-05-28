@@ -118,7 +118,7 @@ def _target_desirability(value, lower, target, upper, weight):
 def _larger_is_better(value, lower, upper, weight):
     """One-sided: larger values better."""
     if lower is None:
-        lower = value - 1
+        lower = 0.0
     if value <= lower:
         return 0.0
     if value >= upper:

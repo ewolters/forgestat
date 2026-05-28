@@ -73,7 +73,7 @@ def multi_vari(
             level_means[str(lev)] = lev_mean
             between_ss += np.sum(mask) * (lev_mean - grand_mean) ** 2
 
-        between_var = between_ss / (n - 1) if n > 1 else 0.0
+        between_var = between_ss / (n_levels - 1) if n_levels > 1 else 0.0
         pct = 100 * between_var / total_var if total_var > 0 else 0.0
         explained_var += between_var
 

@@ -129,10 +129,10 @@ def nonnormal_capability(
         cnpk = min(cnpk_upper, cnpk_lower)
     elif usl is not None and p_high > median:
         cnpk = (usl - median) / (p_high - median)
-        cnp = cnpk
+        # Cnp undefined for one-sided specs (requires both LSL and USL)
     elif lsl is not None and median > p_low:
         cnpk = (median - lsl) / (median - p_low)
-        cnp = cnpk
+        # Cnp undefined for one-sided specs (requires both LSL and USL)
 
     # PPM outside spec
     n_out = 0
