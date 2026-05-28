@@ -153,4 +153,4 @@ def epsilon_squared(h_stat: float, n: int) -> float:
     """
     if n <= 1:
         return 0.0
-    return h_stat / (n * n - 1)
+    return h_stat / (n - 1)

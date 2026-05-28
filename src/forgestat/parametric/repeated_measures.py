@@ -131,10 +131,8 @@ def repeated_measures_anova(
 
 def _greenhouse_geisser_epsilon(Y: np.ndarray, k: int) -> float:
     """Compute Greenhouse-Geisser epsilon for sphericity correction."""
-    # Compute covariance of differences
-    # Center each condition
-    Y_centered = Y - np.mean(Y, axis=1, keepdims=True)
-    S = np.cov(Y_centered.T)  # k × k covariance matrix
+    # Covariance matrix of the k conditions (not subject-centered)
+    S = np.cov(Y.T)  # k × k covariance matrix
 
     if S.ndim == 0:
         return 1.0
@@ -159,12 +157,17 @@ def _mauchly_test(Y: np.ndarray, k: int, n: int) -> float | None:
     if k <= 2:
         return None  # sphericity is always met with 2 conditions
 
-    # Contrast matrix (orthonormalized differences)
+    # Orthonormal contrast matrix (Helmert)
     C = np.zeros((k, k - 1))
     for j in range(k - 1):
-        C[j, j] = 1
-        C[j + 1, j] = -1
-    C = C / np.sqrt(2)
+        m = j + 1
+        C[:m, j] = 1.0 / m
+        C[m, j] = -1.0
+        C[j, j] = 1.0  # overwrite
+        # Normalize column
+        C[:, j] = C[:, j] / np.linalg.norm(C[:, j])
+    # Verify orthonormality via QR on any full-rank contrast
+    C, _ = np.linalg.qr(C, mode='reduced')
 
     # Transformed data
     Z = Y @ C

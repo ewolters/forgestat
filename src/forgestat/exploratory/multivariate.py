@@ -100,10 +100,10 @@ def pca(
         cumsum += v
         cumulative.append(cumsum)
 
-    # Loadings (eigenvectors scaled by sqrt of eigenvalue)
+    # Loadings = eigenvectors scaled by sqrt of eigenvalue
     loadings = {}
     for i, name in enumerate(names):
-        loadings[name] = [float(eigenvectors[i, j]) for j in range(k)]
+        loadings[name] = [float(eigenvectors[i, j] * np.sqrt(eigenvalues[j])) for j in range(k)]
 
     # Scores
     scores = (X_centered @ eigenvectors[:, :k]).tolist()
