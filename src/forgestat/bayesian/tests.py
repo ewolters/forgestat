@@ -344,7 +344,7 @@ def _jzs_bf(t: float, n: float, r: float = 0.707) -> float:
         # BF10 relative to point null
         null_density = stats.t.pdf(t, df)
         if null_density > 0 and result > 0:
-            return max(1e-10, result)
+            return max(1e-10, result / null_density)
         return 1.0
     except Exception:
         # BIC approximation fallback
