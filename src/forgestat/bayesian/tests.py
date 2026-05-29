@@ -352,3 +352,163 @@ def _jzs_bf(t: float, n: float, r: float = 0.707) -> float:
         if log_bf > 500:
             return 1e200  # extreme evidence
         return max(1e-10, math.exp(log_bf))
+
+
+def _bic_bayes_factor(rss_full: float, rss_null: float, n: int, df_extra: int) -> float:
+    """BIC approximation to BF10 for a nested model (full vs reduced).
+
+    BF10 ≈ exp(-ΔBIC/2) where ΔBIC = n·ln(RSS_full/RSS_null) + df_extra·ln(n).
+    Wagenmakers (2007). df_extra = added parameters in the full model.
+    """
+    if rss_full <= 0 or rss_null <= 0:
+        return 1e200
+    log_bf = -0.5 * (n * math.log(rss_full / rss_null) + df_extra * math.log(n))
+    if log_bf > 460:
+        return 1e200
+    return float(max(1e-10, min(math.exp(log_bf), 1e200)))
+
+
+def bayesian_anova(
+    groups: dict[str, list] | list[list],
+    ci_level: float = 0.95,
+) -> BayesianTestResult:
+    """Bayesian one-way ANOVA (BIC-approximated Bayes factor).
+
+    Compares a full model (one mean per group) against the null (a single
+    grand mean). posterior_mean reports η² (proportion of variance explained).
+
+    Args:
+        groups: Mapping of label → values, or a sequence of value sequences.
+        ci_level: Reported credible level (carried through; no CI on η²).
+    """
+    values = groups.values() if isinstance(groups, dict) else groups
+    arrays = [np.asarray(v, dtype=float) for v in values]
+    arrays = [a[np.isfinite(a)] for a in arrays]
+    arrays = [a for a in arrays if len(a) > 0]
+    k = len(arrays)
+    if k < 2:
+        raise ValueError("Need at least 2 groups")
+
+    ns = [len(a) for a in arrays]
+    n = sum(ns)
+    if n <= k:
+        raise ValueError("Need more observations than groups")
+
+    grand_mean = float(np.mean(np.concatenate(arrays)))
+    ss_between = float(sum(ni * (float(np.mean(a)) - grand_mean) ** 2 for a, ni in zip(arrays, ns)))
+    ss_within = float(sum(float(np.sum((a - np.mean(a)) ** 2)) for a in arrays))
+    ss_total = ss_between + ss_within
+    df_between, df_within = k - 1, n - k
+    ms_within = ss_within / df_within if df_within > 0 else 0.0
+    f_stat = (ss_between / df_between) / ms_within if ms_within > 0 else float("inf")
+    eta_sq = ss_between / ss_total if ss_total > 0 else 0.0
+
+    bf10 = _bic_bayes_factor(ss_within, ss_total, n, df_between)
+    return BayesianTestResult(
+        test_name="Bayesian one-way ANOVA",
+        bf10=bf10,
+        bf01=1 / bf10 if bf10 > 0 else float("inf"),
+        bf_label=_bf_label(bf10),
+        posterior_mean=eta_sq,
+        ci_level=ci_level,
+        extra={
+            "f_statistic": f_stat, "df_between": df_between, "df_within": df_within,
+            "k": k, "n": n, "eta_squared": eta_sq,
+            "ss_between": ss_between, "ss_within": ss_within,
+        },
+    )
+
+
+def bayesian_regression(
+    y: list[float] | np.ndarray,
+    X: list | np.ndarray,
+    ci_level: float = 0.95,
+) -> BayesianTestResult:
+    """Bayesian linear regression (BIC-approximated Bayes factor).
+
+    Compares the full model (intercept + predictors) against the
+    intercept-only null. posterior_mean reports R².
+
+    Args:
+        y: Response vector.
+        X: Predictor matrix, n rows × p columns (or a 1-D vector for p=1).
+        ci_level: Reported credible level.
+    """
+    y_arr = np.asarray(y, dtype=float).ravel()
+    X_arr = np.asarray(X, dtype=float)
+    if X_arr.ndim == 1:
+        X_arr = X_arr.reshape(-1, 1)
+    mask = np.isfinite(y_arr) & np.all(np.isfinite(X_arr), axis=1)
+    y_arr, X_arr = y_arr[mask], X_arr[mask]
+    n, p = X_arr.shape
+    if n <= p + 1:
+        raise ValueError("Need more observations than predictors")
+
+    design = np.column_stack([np.ones(n), X_arr])
+    coef, _, _, _ = np.linalg.lstsq(design, y_arr, rcond=None)
+    rss_full = float(np.sum((y_arr - design @ coef) ** 2))
+    rss_null = float(np.sum((y_arr - np.mean(y_arr)) ** 2))
+    r_squared = 1 - rss_full / rss_null if rss_null > 0 else 0.0
+
+    bf10 = _bic_bayes_factor(rss_full, rss_null, n, p)
+    return BayesianTestResult(
+        test_name="Bayesian linear regression",
+        bf10=bf10,
+        bf01=1 / bf10 if bf10 > 0 else float("inf"),
+        bf_label=_bf_label(bf10),
+        posterior_mean=r_squared,
+        ci_level=ci_level,
+        extra={
+            "r_squared": r_squared,
+            "coefficients": [float(c) for c in coef[1:]],
+            "intercept": float(coef[0]),
+            "n": n, "n_predictors": p,
+        },
+    )
+
+
+def bayesian_ab(
+    x1: list[float] | np.ndarray,
+    x2: list[float] | np.ndarray,
+    prior_scale: float = 0.707,
+    ci_level: float = 0.95,
+) -> BayesianTestResult:
+    """Bayesian A/B test: control (x1) vs variant (x2).
+
+    Reports P(B > A) and the uplift posterior under flat priors (normal
+    approximation), plus a JZS Bayes factor. Works on continuous outcomes or
+    binary 0/1 conversions (the mean is then the conversion rate).
+    """
+    a = np.asarray(x1, dtype=float)
+    b = np.asarray(x2, dtype=float)
+    a, b = a[np.isfinite(a)], b[np.isfinite(b)]
+    n1, n2 = len(a), len(b)
+    if n1 < 2 or n2 < 2:
+        raise ValueError("Need at least 2 observations per arm")
+
+    mean_a, mean_b = float(np.mean(a)), float(np.mean(b))
+    se_diff = math.sqrt(float(np.var(a, ddof=1)) / n1 + float(np.var(b, ddof=1)) / n2)
+    uplift = mean_b - mean_a
+    if se_diff > 0:
+        prob_b_better = float(stats.norm.cdf(uplift / se_diff))
+    else:
+        prob_b_better = 0.5 if uplift == 0 else float(uplift > 0)
+
+    t_stat, _ = stats.ttest_ind(a, b, equal_var=False)
+    bf10 = _jzs_bf(float(t_stat), n1 * n2 / (n1 + n2), prior_scale)
+
+    z = stats.norm.ppf(1 - (1 - ci_level) / 2)
+    return BayesianTestResult(
+        test_name="Bayesian A/B test",
+        bf10=bf10,
+        bf01=1 / bf10 if bf10 > 0 else float("inf"),
+        bf_label=_bf_label(bf10),
+        posterior_mean=uplift,
+        posterior_std=se_diff,
+        credible_interval=(float(uplift - z * se_diff), float(uplift + z * se_diff)),
+        ci_level=ci_level,
+        extra={
+            "prob_b_better": prob_b_better, "mean_a": mean_a, "mean_b": mean_b,
+            "uplift": uplift, "n1": n1, "n2": n2,
+        },
+    )
