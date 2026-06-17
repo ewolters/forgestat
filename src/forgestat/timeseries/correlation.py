@@ -8,10 +8,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+from forgecore import ResultMixin
 
 
 @dataclass
-class ACFResult:
+class ACFResult(ResultMixin):
     """ACF/PACF analysis result."""
 
     acf_values: list[float] = field(default_factory=list)
@@ -22,6 +23,42 @@ class ACFResult:
     significant_pacf_lags: list[int] = field(default_factory=list)
     suggested_order: dict[str, int] = field(default_factory=dict)  # {"p": ..., "q": ...}
     ljung_box_p: float | None = None
+
+    @property
+    def summary(self) -> str:
+        return (f"ACF/PACF over {self.n_lags} lags; "
+                f"{len(self.significant_acf_lags)} significant ACF, "
+                f"{len(self.significant_pacf_lags)} significant PACF")
+
+    def _correlogram(self, values: list[float], title: str):
+        """A theme-neutral correlogram: correlation-by-lag bars + ±95% band."""
+        from forgecore import ROLE_CONTROL_LIMIT, ROLE_DATA, ChartSpec
+
+        spec = ChartSpec(
+            title=title, chart_type="bar",
+            x_axis={"label": "Lag"}, y_axis={"label": "Correlation"},
+        )
+        spec.add_trace([str(i) for i in range(len(values))], list(values),
+                       trace_type="bar", color="", role=ROLE_DATA)
+        if self.confidence_bound:
+            spec.add_reference_line(self.confidence_bound, axis="y", dash="dashed",
+                                    color="", label="95% bound", role=ROLE_CONTROL_LIMIT)
+            spec.add_reference_line(-self.confidence_bound, axis="y", dash="dashed",
+                                    color="", role=ROLE_CONTROL_LIMIT)
+        return spec
+
+    def to_render(self):
+        """Primary portrait: the ACF correlogram."""
+        return self._correlogram(self.acf_values, "Autocorrelation (ACF)")
+
+    def views(self) -> list:
+        """Complete portrait: ACF and PACF correlograms (each if present)."""
+        specs = []
+        if self.acf_values:
+            specs.append(self._correlogram(self.acf_values, "Autocorrelation (ACF)"))
+        if self.pacf_values:
+            specs.append(self._correlogram(self.pacf_values, "Partial Autocorrelation (PACF)"))
+        return specs or [self.to_render()]
 
 
 @dataclass
