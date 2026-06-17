@@ -11,6 +11,7 @@ import math
 from dataclasses import dataclass, field
 
 import numpy as np
+from forgecore import ResultMixin
 from scipy import stats
 
 
@@ -26,7 +27,7 @@ class Changepoint:
 
 
 @dataclass
-class ChangepointResult:
+class ChangepointResult(ResultMixin):
     """Change point detection result."""
 
     method: str  # "pelt", "bocpd", "cusum"
@@ -34,6 +35,30 @@ class ChangepointResult:
     n_segments: int = 0
     segment_means: list[float] = field(default_factory=list)
     segment_boundaries: list[int] = field(default_factory=list)
+    series: list[float] = field(default_factory=list)  # §5b: carries its own data
+
+    @property
+    def summary(self) -> str:
+        return (f"{self.method.upper()}: {len(self.changepoints)} changepoint(s), "
+                f"{self.n_segments} segment(s)")
+
+    def to_render(self):
+        """Primary portrait: the series with a marker at each changepoint."""
+        from forgecore import ROLE_CONTROL_LIMIT, ROLE_DATA, ChartSpec
+
+        spec = ChartSpec(
+            title="Changepoint Detection", chart_type="line",
+            x_axis={"label": "Index"}, y_axis={"label": "Value"},
+        )
+        spec.add_trace(list(range(len(self.series))), list(self.series),
+                       trace_type="line", color="", role=ROLE_DATA)
+        for cp in self.changepoints:
+            spec.add_reference_line(cp.index, axis="x", dash="dashed",
+                                    color="", role=ROLE_CONTROL_LIMIT)
+        return spec
+
+    def views(self) -> list:
+        return [self.to_render()]
 
 
 @dataclass
@@ -336,4 +361,5 @@ def _build_result(method: str, x: np.ndarray, bkps: list[int]) -> ChangepointRes
         n_segments=len(segments_means),
         segment_means=segments_means,
         segment_boundaries=boundaries,
+        series=x.tolist(),
     )

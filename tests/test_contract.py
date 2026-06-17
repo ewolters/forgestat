@@ -10,6 +10,7 @@ from forgecore.testing import assert_result_conforms
 from forgeviz.renderers import to_svg
 
 from forgestat.timeseries.causality import GrangerResult
+from forgestat.timeseries.changepoint import pelt
 from forgestat.timeseries.correlation import ACFResult, CCFResult
 from forgestat.timeseries.decomposition import DecompositionResult
 from forgestat.timeseries.forecasting import ARIMAResult, ForecastPoint
@@ -144,3 +145,39 @@ def test_granger_renders_pvalue_bar_with_alpha_threshold():
 def test_granger_view_renders_to_svg_through_forgeviz():
     for spec in _granger().views():
         assert "<svg" in to_svg(spec)
+
+
+def _changepoint():
+    # A clear level shift at index 25. The default "bic" penalty is too high to
+    # flag a step this clean (a known pelt sensitivity); pin a numeric penalty —
+    # this exercises the render contract, not detector tuning. Unlike the
+    # field-only types, ChangepointResult is data-context: it now carries its
+    # own series (§5b data-carrying retrofit) so it self-renders with no data=.
+    return pelt([10.0] * 25 + [20.0] * 25, penalty=1.0, min_size=5)
+
+
+def test_changepoint_result_conforms_to_engine_contract():
+    assert_result_conforms(_changepoint())
+
+
+def test_changepoint_carries_its_own_series():
+    assert len(_changepoint().series) == 50  # §5b: the result owns its data
+
+
+def test_changepoint_to_render_marks_each_changepoint():
+    r = _changepoint()
+    spec = r.to_render()
+    assert spec.chart_type == "line"
+    assert len(r.changepoints) >= 1
+    assert len(spec.reference_lines) == len(r.changepoints)
+
+
+def test_changepoint_self_renders_through_bridge_without_data_kwarg():
+    # The regression guard: through the REAL bridge, NO data= forwarded —
+    # proves the data-carrying retrofit (the old builder needed data=).
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_changepoint())
+    assert len(charts) == 1
+    assert charts[0].chart_type == "line"
+    assert "<svg" in to_svg(charts[0])
