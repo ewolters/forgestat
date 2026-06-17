@@ -8,6 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+from forgecore import ResultMixin
 
 
 @dataclass
@@ -21,7 +22,7 @@ class ForecastPoint:
 
 
 @dataclass
-class ARIMAResult:
+class ARIMAResult(ResultMixin):
     """ARIMA/SARIMA model result."""
 
     order: tuple[int, int, int]  # (p, d, q)
@@ -36,6 +37,53 @@ class ARIMAResult:
     ljung_box_p: float | None = None  # residual autocorrelation test
     is_stationary: bool | None = None
     adf_p_value: float | None = None
+
+    @property
+    def summary(self) -> str:
+        return f"ARIMA{self.order}; AIC {self.aic:.1f}, BIC {self.bic:.1f}"
+
+    def _forecast_chart(self):
+        """Forecast with a confidence band — predicted + lower + upper lines."""
+        from forgecore import ROLE_CONTROL_LIMIT, ROLE_DATA, ChartSpec
+
+        steps = [p.step for p in self.forecast]
+        spec = ChartSpec(
+            title="Forecast", chart_type="line",
+            x_axis={"label": "Step"}, y_axis={"label": "Value"},
+        )
+        spec.add_trace(steps, [p.predicted for p in self.forecast],
+                       name="Forecast", trace_type="line", color="", role=ROLE_DATA)
+        spec.add_trace(steps, [p.ci_lower for p in self.forecast],
+                       name="Lower", trace_type="line", color="", dash="dashed",
+                       role=ROLE_CONTROL_LIMIT)
+        spec.add_trace(steps, [p.ci_upper for p in self.forecast],
+                       name="Upper", trace_type="line", color="", dash="dashed",
+                       role=ROLE_CONTROL_LIMIT)
+        return spec
+
+    def _residual_chart(self):
+        from forgecore import ROLE_DATA, ChartSpec
+
+        spec = ChartSpec(
+            title="Residuals", chart_type="line",
+            x_axis={"label": "Index"}, y_axis={"label": "Residual"},
+        )
+        spec.add_trace(list(range(len(self.residuals))), list(self.residuals),
+                       trace_type="line", color="", role=ROLE_DATA)
+        return spec
+
+    def to_render(self):
+        """Primary portrait: the forecast with its confidence band."""
+        return self._forecast_chart()
+
+    def views(self) -> list:
+        """Complete portrait: forecast then residuals (each if present)."""
+        specs = []
+        if self.forecast:
+            specs.append(self._forecast_chart())
+        if self.residuals:
+            specs.append(self._residual_chart())
+        return specs or [self.to_render()]
 
 
 def arima(

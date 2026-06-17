@@ -9,10 +9,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+from forgecore import ResultMixin
 
 
 @dataclass
-class GrangerResult:
+class GrangerResult(ResultMixin):
     """Granger causality test result."""
 
     x_causes_y: bool = False
@@ -20,6 +21,30 @@ class GrangerResult:
     best_lag: int = 0
     best_p_value: float = 1.0
     max_lag_tested: int = 0
+    alpha: float = 0.05  # significance threshold the test was run at
+
+    @property
+    def summary(self) -> str:
+        verdict = "X Granger-causes Y" if self.x_causes_y else "no Granger causality"
+        return f"{verdict}; best lag {self.best_lag} (p={self.best_p_value:.3f})"
+
+    def to_render(self):
+        """Primary portrait: p-value by lag with the α significance threshold."""
+        from forgecore import ROLE_CONTROL_LIMIT, ROLE_DATA, ChartSpec
+
+        spec = ChartSpec(
+            title="Granger Causality — p-value by lag", chart_type="bar",
+            x_axis={"label": "Lag"}, y_axis={"label": "p-value"},
+        )
+        lags = [str(r.get("lag", i + 1)) for i, r in enumerate(self.results_by_lag)]
+        pvals = [float(r.get("p_value", 1.0)) for r in self.results_by_lag]
+        spec.add_trace(lags, pvals, trace_type="bar", color="", role=ROLE_DATA)
+        spec.add_reference_line(self.alpha, axis="y", dash="dashed", color="",
+                                label=f"alpha = {self.alpha}", role=ROLE_CONTROL_LIMIT)
+        return spec
+
+    def views(self) -> list:
+        return [self.to_render()]
 
 
 @dataclass
@@ -98,6 +123,7 @@ def granger_causality(
         best_lag=best_lag,
         best_p_value=best_p,
         max_lag_tested=max_lag,
+        alpha=alpha,
     )
 
 

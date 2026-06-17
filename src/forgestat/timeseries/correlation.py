@@ -62,7 +62,7 @@ class ACFResult(ResultMixin):
 
 
 @dataclass
-class CCFResult:
+class CCFResult(ResultMixin):
     """Cross-correlation function result."""
 
     lags: list[int] = field(default_factory=list)
@@ -72,6 +72,32 @@ class CCFResult:
     peak_value: float = 0.0
     significant_lags: list[int] = field(default_factory=list)
     lead_lag_interpretation: str = ""
+
+    @property
+    def summary(self) -> str:
+        return self.lead_lag_interpretation or (
+            f"Peak CCF {self.peak_value:.3f} at lag {self.peak_lag}")
+
+    def to_render(self):
+        """Primary portrait: cross-correlation bars over lags + ±95% band."""
+        from forgecore import ROLE_CONTROL_LIMIT, ROLE_DATA, ChartSpec
+
+        spec = ChartSpec(
+            title="Cross-Correlation (CCF)", chart_type="bar",
+            x_axis={"label": "Lag"}, y_axis={"label": "Correlation"},
+        )
+        cats = [str(l) for l in self.lags] or [str(i) for i in range(len(self.ccf_values))]
+        spec.add_trace(cats, list(self.ccf_values),
+                       trace_type="bar", color="", role=ROLE_DATA)
+        if self.confidence_bound:
+            spec.add_reference_line(self.confidence_bound, axis="y", dash="dashed",
+                                    color="", label="95% bound", role=ROLE_CONTROL_LIMIT)
+            spec.add_reference_line(-self.confidence_bound, axis="y", dash="dashed",
+                                    color="", role=ROLE_CONTROL_LIMIT)
+        return spec
+
+    def views(self) -> list:
+        return [self.to_render()]
 
 
 def acf_pacf(

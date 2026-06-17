@@ -8,10 +8,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+from forgecore import ResultMixin
 
 
 @dataclass
-class DecompositionResult:
+class DecompositionResult(ResultMixin):
     """Time series decomposition result."""
 
     model: str  # "additive" or "multiplicative"
@@ -24,6 +25,41 @@ class DecompositionResult:
     trend_strength: float = 0.0  # 0-1
     trend_direction: str = ""  # "upward", "downward", "flat"
     trend_change: float = 0.0
+
+    @property
+    def summary(self) -> str:
+        return (f"{self.model} decomposition, period {self.period}; "
+                f"trend {self.trend_direction or 'n/a'} "
+                f"(strength {self.trend_strength:.2f}), "
+                f"seasonal strength {self.seasonal_strength:.2f}")
+
+    def _panel(self, values: list[float], title: str):
+        """A theme-neutral component line over period index.
+
+        Trend/residual are undefined at the series boundaries (centered moving
+        average), so plot only the defined points — a gap, not a crash.
+        """
+        from forgecore import ROLE_DATA, ChartSpec
+
+        spec = ChartSpec(
+            title=title, chart_type="line",
+            x_axis={"label": "Period"}, y_axis={"label": title},
+        )
+        pts = [(i, v) for i, v in enumerate(values) if v is not None]
+        spec.add_trace([i for i, _ in pts], [v for _, v in pts],
+                       trace_type="line", color="", role=ROLE_DATA)
+        return spec
+
+    def to_render(self):
+        """Primary portrait: the observed series."""
+        return self._panel(self.observed, "Observed")
+
+    def views(self) -> list:
+        """Complete portrait: observed / trend / seasonal / residual panels."""
+        panels = [("Observed", self.observed), ("Trend", self.trend),
+                  ("Seasonal", self.seasonal), ("Residual", self.residual)]
+        specs = [self._panel(vals, title) for title, vals in panels if vals]
+        return specs or [self.to_render()]
 
 
 def classical_decompose(
