@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from forgecore import ResultMixin
+
 
 def _to_dict(obj) -> dict:
     """Recursive dataclass → dict. Handles nested dataclasses and numpy scalars."""
@@ -123,16 +125,76 @@ class Anova2Source:
 
 
 @dataclass
-class CorrelationResult:
+class CorrelationResult(ResultMixin):
     """Correlation analysis result."""
 
     method: str  # "pearson", "spearman", "kendall"
     pairs: list[CorrelationPair] = field(default_factory=list)
     matrix: dict[str, dict[str, float]] = field(default_factory=dict)
     assumptions: list[AssumptionCheck] = field(default_factory=list)
+    data: dict[str, list[float]] = field(default_factory=dict)  # raw columns — views() draw from it (§5b)
 
     def to_dict(self) -> dict:
         return _to_dict(self)
+
+    @property
+    def summary(self) -> str:
+        if self.pairs:
+            top = self.pairs[0]
+            return (f"{self.method} correlation, {len(self.pairs)} pair(s); "
+                    f"strongest {top.var1}~{top.var2} r={top.r:.3f}")
+        return f"{self.method} correlation"
+
+    def _scatter(self, xname: str, yname: str, title: str = ""):
+        """Scatter of two columns + a least-squares trend line, theme-neutral."""
+        import numpy as np
+        from forgecore import ROLE_CONTROL_LIMIT, ROLE_DATA, ChartSpec
+
+        x = list(self.data.get(xname, []))
+        y = list(self.data.get(yname, []))
+        spec = ChartSpec(title=title or f"{xname} vs {yname}", chart_type="scatter",
+                         x_axis={"label": xname}, y_axis={"label": yname})
+        spec.add_trace(x, y, trace_type="scatter", color="", role=ROLE_DATA)
+        if len(set(x)) >= 2:
+            slope, intercept = np.polyfit(x, y, 1)
+            ends = [min(x), max(x)]
+            spec.add_trace(ends, [slope * v + intercept for v in ends],
+                           trace_type="line", dash="dashed", color="", role=ROLE_CONTROL_LIMIT)
+        return spec
+
+    def _hist(self, name: str):
+        import numpy as np
+        from forgecore import ROLE_DATA, ChartSpec
+
+        counts, edges = np.histogram(list(self.data.get(name, [])), bins=10)
+        centers = [f"{(edges[i] + edges[i + 1]) / 2:.2g}" for i in range(len(counts))]
+        spec = ChartSpec(title=name, chart_type="bar",
+                         x_axis={"label": name}, y_axis={"label": "Frequency"})
+        spec.add_trace(centers, counts.tolist(), trace_type="bar", color="", role=ROLE_DATA)
+        return spec
+
+    def _cols(self) -> list[str]:
+        return [c for c in self.data if self.data[c]]
+
+    def to_render(self):
+        """Primary portrait: scatter of the strongest correlated pair."""
+        cols = self._cols()
+        if self.pairs and self.data:
+            return self._scatter(self.pairs[0].var1, self.pairs[0].var2)
+        if len(cols) >= 2:
+            return self._scatter(cols[0], cols[1])
+        from forgecore import ChartSpec
+        return ChartSpec(title="Correlation", chart_type="scatter")
+
+    def views(self) -> list:
+        """Complete portrait: one scatter (2 vars) or a scatter matrix (>2)."""
+        cols = self._cols()
+        if len(cols) > 2:
+            return [self._hist(xi) if xi == yi else self._scatter(xi, yi)
+                    for yi in cols for xi in cols]
+        if len(cols) == 2:
+            return [self._scatter(cols[0], cols[1])]
+        return [self.to_render()]
 
 
 @dataclass

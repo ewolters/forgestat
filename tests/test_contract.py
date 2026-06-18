@@ -9,6 +9,7 @@ from forgecore import ChartSpec
 from forgecore.testing import assert_result_conforms
 from forgeviz.renderers import to_svg
 
+from forgestat.parametric.correlation import correlation
 from forgestat.regression.linear import ols
 from forgestat.regression.nonlinear import curve_fit
 from forgestat.timeseries.causality import GrangerResult
@@ -228,4 +229,43 @@ def test_nonlinear_self_renders_four_panels_through_bridge():
 
     charts = charts_from_result(_nonlinear())
     assert len(charts) == 4
+    assert all("<svg" in to_svg(c) for c in charts)
+
+
+def _corr_pair():
+    # Two correlated variables — the result is data-context: it now carries the
+    # raw columns (§5b) so it self-renders the scatter with no data_dict= kwarg.
+    return correlation({"x": [float(i) for i in range(20)],
+                        "y": [2.0 * i + (1 if i % 2 else -1) for i in range(20)]})
+
+
+def _corr_multi():
+    rng = [float(i) for i in range(20)]
+    return correlation({"a": rng, "b": [2 * v for v in rng],
+                        "c": [v * v for v in rng]})
+
+
+def test_correlation_result_conforms_to_engine_contract():
+    assert_result_conforms(_corr_pair())
+
+
+def test_correlation_carries_its_raw_columns():
+    r = _corr_pair()
+    assert set(r.data) == {"x", "y"} and len(r.data["x"]) == 20  # §5b
+
+
+def test_correlation_two_vars_self_renders_one_scatter_via_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_corr_pair())  # NO data_dict=
+    assert len(charts) == 1
+    assert charts[0].chart_type == "scatter"
+    assert "<svg" in to_svg(charts[0])
+
+
+def test_correlation_three_vars_self_renders_scatter_matrix_via_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_corr_multi())  # NO data_dict=
+    assert len(charts) == 9  # 3x3 matrix: diagonal histograms + off-diagonal scatters
     assert all("<svg" in to_svg(c) for c in charts)

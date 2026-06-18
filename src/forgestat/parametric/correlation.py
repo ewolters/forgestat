@@ -89,6 +89,7 @@ def correlation(
         method=method,
         pairs=pairs,
         matrix=matrix,
+        data={n: [float(v) for v in arrays[n]] for n in names},  # §5b: views() draw from it
     )
 
 
