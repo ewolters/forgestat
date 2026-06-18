@@ -12,6 +12,7 @@ from forgeviz.renderers import to_svg
 from forgestat.parametric.anova import one_way
 from forgestat.parametric.correlation import correlation
 from forgestat.core.types import Anova2Result, Anova2Source, ChiSquareResult, ProportionResult
+from forgestat.bayesian.tests import BayesianTestResult, bayesian_ttest_one_sample
 from forgestat.parametric.equivalence import tost
 from forgestat.posthoc.comparisons import dunnett, tukey_hsd
 from forgestat.parametric.ttest import one_sample, two_sample
@@ -586,6 +587,31 @@ def test_base_testresult_self_renders_through_bridge():
     hist = charts_from_result(_sign())  # NO data=
     assert hist[0].chart_type == "histogram"
     assert all("<svg" in to_svg(c) for c in box + hist)
+
+
+def _bayes_ttest():
+    # Bayesian one-sample t-test — carries posterior moments; field-only
+    # posterior-density render (no draws, Normal approx from mean/std).
+    return bayesian_ttest_one_sample([10.0, 11, 9, 12, 13, 8, 11, 10, 12, 9], mu=8.0)
+
+
+def test_bayesian_test_conforms_to_engine_contract():
+    assert_result_conforms(_bayes_ttest())
+
+
+def test_bayesian_test_self_renders_posterior_density_through_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_bayes_ttest())  # NO kwargs
+    assert charts[0].chart_type == "posterior_density"
+    assert "<svg" in to_svg(charts[0])
+
+
+def test_bayesian_mean_only_result_yields_no_chart():
+    # eta-squared / R² results carry a mean but no posterior std -> nothing to plot
+    from forgeviz.core.bridge import charts_from_result
+
+    assert charts_from_result(BayesianTestResult(test_name="r2", posterior_mean=0.42)) == []
 
 
 def _kaplan_meier():

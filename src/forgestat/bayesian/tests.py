@@ -9,11 +9,12 @@ import math
 from dataclasses import dataclass, field
 
 import numpy as np
+from forgecore import ROLE_CENTERLINE, ROLE_CONTROL_LIMIT, ROLE_DATA, ChartSpec, ResultMixin
 from scipy import stats
 
 
 @dataclass
-class BayesianTestResult:
+class BayesianTestResult(ResultMixin):
     """Result of a Bayesian hypothesis test."""
 
     test_name: str
@@ -27,6 +28,40 @@ class BayesianTestResult:
     rope: tuple[float, float] | None = None  # region of practical equivalence
     p_rope: float | None = None  # probability within ROPE
     extra: dict = field(default_factory=dict)
+
+    @property
+    def summary(self) -> str:
+        return f"{self.test_name}: BF10={self.bf10:.3g} ({self.bf_label})"
+
+    def to_render(self) -> ChartSpec:
+        """Field-only: Normal-approximation posterior density from the moments.
+        Summary-only results (no posterior std) have nothing to plot."""
+        spec = ChartSpec(title="Posterior Distribution (Normal approx.)",
+                         chart_type="posterior_density",
+                         x_axis={"label": "Effect size"}, y_axis={"label": "Density"})
+        mean, std = self.posterior_mean, self.posterior_std
+        if mean is None or std is None or std <= 0:
+            return spec
+        lo, hi = mean - 4 * std, mean + 4 * std
+        n = 121
+        xs = [lo + (hi - lo) * i / (n - 1) for i in range(n)]
+        coef = 1.0 / (std * math.sqrt(2 * math.pi))
+        ys = [coef * math.exp(-0.5 * ((x - mean) / std) ** 2) for x in xs]
+        spec.add_trace(xs, ys, name="Posterior", trace_type="line", color="", role=ROLE_DATA)
+        spec.add_reference_line(mean, dash="solid", label=f"Mean={mean:.3f}", role=ROLE_CENTERLINE)
+        if self.credible_interval:
+            ci_lo, ci_hi = self.credible_interval
+            spec.add_reference_line(ci_lo, dash="dotted", label=f"CI Low={ci_lo:.3f}", role=ROLE_CONTROL_LIMIT)
+            spec.add_reference_line(ci_hi, dash="dotted", label=f"CI High={ci_hi:.3f}", role=ROLE_CONTROL_LIMIT)
+        if self.p_rope is not None:
+            spec.annotations.append({"x": 0.7, "y": 0.9,
+                                     "text": f"P(in ROPE) = {self.p_rope * 100:.1f}%", "font_size": 11})
+        return spec
+
+    def views(self) -> list[ChartSpec]:
+        if self.posterior_std and self.posterior_std > 0:
+            return [self.to_render()]
+        return []
 
 
 def _bf_label(bf: float) -> str:
