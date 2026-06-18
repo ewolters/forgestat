@@ -15,7 +15,13 @@ from forgestat.core.types import Anova2Result, Anova2Source, ChiSquareResult, Pr
 from forgestat.parametric.equivalence import tost
 from forgestat.posthoc.comparisons import dunnett, tukey_hsd
 from forgestat.parametric.ttest import one_sample, two_sample
-from forgestat.nonparametric.rank_tests import mann_whitney, wilcoxon_signed_rank
+from forgestat.nonparametric.rank_tests import (
+    kruskal_wallis,
+    mann_whitney,
+    sign_test,
+    wilcoxon_signed_rank,
+)
+from forgestat.parametric.variance import variance_test
 from forgestat.regression.linear import ols
 from forgestat.regression.nonlinear import curve_fit
 from forgestat.reliability.distributions import WeibullFit, weibull_fit
@@ -537,6 +543,49 @@ def test_categorical_results_self_render_through_bridge():
     for r in (_chi_square(), _proportion(), _anova2()):
         charts = charts_from_result(r)  # NO kwargs
         assert len(charts) == 1 and "<svg" in to_svg(charts[0])
+
+
+def _kruskal():
+    # Bare TestResult from a group test — §5b: carries its raw groups, box + Q-Q.
+    return kruskal_wallis([10.0, 11, 9, 10, 12, 8], [15.0, 16, 14, 15, 17, 13],
+                          [20.0, 21, 19, 20, 22, 18], labels=["A", "B", "C"])
+
+
+def _variance():
+    return variance_test([10.0, 11, 9, 10, 12, 8], [15.0, 16, 18, 15, 11, 13],
+                         labels=["A", "B"])
+
+
+def _sign():
+    # Bare TestResult from a one-sample test — histogram of the sample.
+    return sign_test([10.0, 11, 9, 12, 13, 8, 14, 7, 11, 10], median0=9.0)
+
+
+def test_kruskal_conforms_to_engine_contract():
+    assert_result_conforms(_kruskal())
+
+
+def test_variance_test_conforms_to_engine_contract():
+    assert_result_conforms(_variance())
+
+
+def test_sign_test_conforms_to_engine_contract():
+    assert_result_conforms(_sign())
+
+
+def test_base_testresult_carries_its_samples():
+    assert set(_kruskal().samples) == {"A", "B", "C"}  # §5b group test
+    assert "Sample" in _sign().samples  # §5b one-sample test
+
+
+def test_base_testresult_self_renders_through_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    box = charts_from_result(_kruskal())  # NO groups=
+    assert box[0].chart_type == "box_plot" and len(box) == 4
+    hist = charts_from_result(_sign())  # NO data=
+    assert hist[0].chart_type == "histogram"
+    assert all("<svg" in to_svg(c) for c in box + hist)
 
 
 def _kaplan_meier():

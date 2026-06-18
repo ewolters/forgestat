@@ -99,6 +99,7 @@ def kruskal_wallis(
         effect_size_type="epsilon_squared",
         effect_label=classify_effect(eps2, "epsilon_squared"),
         alpha=alpha,
+        samples={name: a.tolist() for name, a in zip(names, arrays)},
         extra={"group_medians": group_medians, "k": k, "n_total": n_total},
     )
 
@@ -202,6 +203,7 @@ def friedman(
         effect_size_type="kendalls_w",
         effect_label=classify_effect(w, "r"),
         alpha=alpha,
+        samples={name: a.tolist() for name, a in zip(names, arrays)},
         extra={
             "kendalls_w": w,
             "condition_medians": {name: float(np.median(a)) for name, a in zip(names, arrays)},
@@ -242,6 +244,7 @@ def mood_median(
         p_value=float(p_val),
         df=float(len(arrays) - 1),
         alpha=alpha,
+        samples={name: a.tolist() for name, a in zip(names, arrays)},
         extra={
             "grand_median": float(grand_median),
             "group_medians": group_medians,
@@ -287,6 +290,7 @@ def sign_test(
         p_value=p_val,
         alpha=alpha,
         significant=bool(p_val < alpha),
+        samples={"Sample": x.tolist()},
         extra={
             "above": above,
             "below": below,
@@ -362,6 +366,7 @@ def runs_test(
         statistic=float(z),
         p_value=float(p_val),
         alpha=alpha,
+        samples={"Sample": x.tolist()},
         extra={
             "n_runs": runs,
             "expected_runs": float(mu_r),

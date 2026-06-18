@@ -41,6 +41,7 @@ def f_test(
         p_value=float(p_val),
         df=float(df1),
         alpha=alpha,
+        samples={"Group 1": a.tolist(), "Group 2": b.tolist()},
         extra={"var1": var1, "var2": var2, "df1": df1, "df2": df2, "ratio": f_stat},
     )
 
@@ -61,6 +62,7 @@ def variance_test(
     """
     arrays = [np.asarray(g, dtype=float) for g in groups]
     arrays = [a[np.isfinite(a)] for a in arrays]
+    names = labels or [f"Group {i+1}" for i in range(len(arrays))]
 
     if method == "bartlett":
         stat, p = stats.bartlett(*arrays)
@@ -75,5 +77,6 @@ def variance_test(
         p_value=float(p),
         df=float(len(arrays) - 1),
         alpha=alpha,
+        samples={name: a.tolist() for name, a in zip(names, arrays)},
         extra={"variances": [float(np.var(a, ddof=1)) for a in arrays]},
     )

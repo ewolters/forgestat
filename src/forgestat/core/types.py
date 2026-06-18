@@ -44,7 +44,7 @@ class AssumptionCheck:
 
 
 @dataclass
-class TestResult:
+class TestResult(ResultMixin):
     """Result of a hypothesis test."""
 
     test_name: str
@@ -61,12 +61,32 @@ class TestResult:
     method: str = ""  # "welch", "pooled", etc.
     assumptions: list[AssumptionCheck] = field(default_factory=list)
     extra: dict[str, Any] = field(default_factory=dict)
+    samples: dict[str, list[float]] = field(default_factory=dict)  # raw samples — views() draw from it (§5b)
 
     def __post_init__(self):
         self.significant = bool(self.p_value < self.alpha)
 
     def to_dict(self) -> dict:
         return _to_dict(self)
+
+    @property
+    def summary(self) -> str:
+        return (f"{self.test_name}: stat={self.statistic:.3f}, p={self.p_value:.4f}"
+                f"{' (significant)' if self.significant else ''}")
+
+    def to_render(self) -> ChartSpec:
+        """Box plot (group test) or histogram (one sample) from the raw samples."""
+        from ._distribution_views import sample_views
+        return sample_views(self.samples)[0]
+
+    def views(self) -> list[ChartSpec]:
+        # Sample-carrying tests get the box/histogram + Q-Q portrait; subclasses
+        # that own a different chart (ChiSquare heatmap, Proportion bar) carry no
+        # samples and fall back to their own to_render().
+        from ._distribution_views import sample_views
+        if self.samples:
+            return sample_views(self.samples)
+        return [self.to_render()]
 
 
 @dataclass
