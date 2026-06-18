@@ -9,6 +9,8 @@ from forgecore import ChartSpec
 from forgecore.testing import assert_result_conforms
 from forgeviz.renderers import to_svg
 
+from forgestat.regression.linear import ols
+from forgestat.regression.nonlinear import curve_fit
 from forgestat.timeseries.causality import GrangerResult
 from forgestat.timeseries.changepoint import pelt
 from forgestat.timeseries.correlation import ACFResult, CCFResult
@@ -181,3 +183,49 @@ def test_changepoint_self_renders_through_bridge_without_data_kwarg():
     assert len(charts) == 1
     assert charts[0].chart_type == "line"
     assert "<svg" in to_svg(charts[0])
+
+
+def _regression():
+    # Real OLS on y = 2x + noise — the result carries fitted + residuals, which
+    # the 4-in-1 residual diagnostics are built from (field-only).
+    X = [[float(i)] for i in range(30)]
+    y = [2.0 * i + (0.5 if i % 2 else -0.5) for i in range(30)]
+    return ols(X, y)
+
+
+def _nonlinear():
+    x = [float(i) for i in range(1, 25)]
+    y = [2.0 * (1.0 - 2.718 ** (-0.3 * xi)) for xi in x]
+    return curve_fit(x, y, model="exponential")
+
+
+def test_regression_result_conforms_to_engine_contract():
+    assert_result_conforms(_regression())
+
+
+def test_nonlinear_result_conforms_to_engine_contract():
+    assert_result_conforms(_nonlinear())
+
+
+def test_regression_views_are_the_four_in_one_panel():
+    views = _regression().views()
+    assert len(views) == 4  # resid-vs-fitted, Q-Q, histogram, resid-vs-order
+    assert all(isinstance(v, ChartSpec) for v in views)
+
+
+def test_regression_self_renders_through_bridge_without_kwargs():
+    # The duck-typed regression builder is gone; the result self-renders its
+    # 4-in-1 via the contract fallback. No fitted=/residuals= kwargs forwarded.
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_regression())
+    assert len(charts) == 4
+    assert all("<svg" in to_svg(c) for c in charts)
+
+
+def test_nonlinear_self_renders_four_panels_through_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_nonlinear())
+    assert len(charts) == 4
+    assert all("<svg" in to_svg(c) for c in charts)

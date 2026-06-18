@@ -8,11 +8,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import numpy as np
+from forgecore import ResultMixin
 from scipy import stats
 
 
 @dataclass
-class RegressionResult:
+class RegressionResult(ResultMixin):
     """OLS regression result."""
 
     coefficients: dict[str, float] = field(default_factory=dict)
@@ -34,6 +35,21 @@ class RegressionResult:
     fitted: list[float] = field(default_factory=list)
     leverage: list[float] = field(default_factory=list)
     cooks_distance: list[float] = field(default_factory=list)
+
+    @property
+    def summary(self) -> str:
+        return (f"OLS: R2={self.r_squared:.3f}, adj R2={self.adj_r_squared:.3f}, "
+                f"RMSE={self.rmse:.3g}, n={self.n}")
+
+    def to_render(self):
+        """Primary portrait: residuals vs fitted."""
+        from ._diagnostics import residual_vs_fitted
+        return residual_vs_fitted(self.fitted, self.residuals)
+
+    def views(self) -> list:
+        """Complete portrait: the 4-in-1 residual diagnostic panel."""
+        from ._diagnostics import residual_diagnostics
+        return residual_diagnostics(self.fitted, self.residuals) or [self.to_render()]
 
 
 def ols(

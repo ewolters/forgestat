@@ -9,11 +9,12 @@ import math
 from dataclasses import dataclass, field
 
 import numpy as np
+from forgecore import ResultMixin
 from scipy import optimize
 
 
 @dataclass
-class NonlinearResult:
+class NonlinearResult(ResultMixin):
     """Nonlinear curve fit result."""
 
     model: str
@@ -27,6 +28,21 @@ class NonlinearResult:
     converged: bool = True
     residuals: list[float] = field(default_factory=list)
     fitted: list[float] = field(default_factory=list)
+
+    @property
+    def summary(self) -> str:
+        return (f"{self.model} fit: R2={self.r_squared:.3f}, "
+                f"RMSE={self.rmse:.3g}, n={self.n}")
+
+    def to_render(self):
+        """Primary portrait: residuals vs fitted."""
+        from ._diagnostics import residual_vs_fitted
+        return residual_vs_fitted(self.fitted, self.residuals)
+
+    def views(self) -> list:
+        """Complete portrait: the 4-in-1 residual diagnostic panel."""
+        from ._diagnostics import residual_diagnostics
+        return residual_diagnostics(self.fitted, self.residuals) or [self.to_render()]
 
 
 # Preset model functions and their parameter names
