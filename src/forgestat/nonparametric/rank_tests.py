@@ -57,6 +57,7 @@ def mann_whitney(
         median_diff=median_diff,
         n1=n1,
         n2=n2,
+        samples={"Group 1": a.tolist(), "Group 2": b.tolist()},
         extra={"rank_biserial": r_rb, "hodges_lehmann": median_diff},
     )
 
@@ -158,6 +159,7 @@ def wilcoxon_signed_rank(
         alpha=alpha,
         median1=float(np.median(diff)),
         n1=n,
+        samples={"Differences": diff.tolist()},
         extra={"z": float(z), "n_effective": n_eff},
     )
 

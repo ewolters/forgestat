@@ -93,5 +93,6 @@ def tost(
         ci_upper=float(ci_hi),
         ci_level=ci_level,
         effect_size=d,
+        samples={"Group 1": a.tolist(), "Group 2": b.tolist()},
         assumptions=assumptions,
     )

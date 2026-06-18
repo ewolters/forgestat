@@ -11,7 +11,9 @@ from forgeviz.renderers import to_svg
 
 from forgestat.parametric.anova import one_way
 from forgestat.parametric.correlation import correlation
+from forgestat.parametric.equivalence import tost
 from forgestat.parametric.ttest import one_sample, two_sample
+from forgestat.nonparametric.rank_tests import mann_whitney, wilcoxon_signed_rank
 from forgestat.regression.linear import ols
 from forgestat.regression.nonlinear import curve_fit
 from forgestat.reliability.distributions import WeibullFit, weibull_fit
@@ -387,6 +389,63 @@ def test_ttest_self_renders_through_bridge_without_kwargs():
     one = charts_from_result(_ttest_one())  # NO data=
     assert one[0].chart_type == "histogram" and len(one) == 2
     assert all("<svg" in to_svg(c) for c in two + one)
+
+
+def _mann_whitney():
+    # Two-group rank test — carries both samples (§5b), self-renders box + Q-Q.
+    return mann_whitney([10.0, 11, 9, 10, 12, 8], [15.0, 16, 14, 15, 17, 13])
+
+
+def _wilcoxon():
+    # Paired signed-rank — self-renders a histogram of the differences.
+    return wilcoxon_signed_rank([10.0, 12, 9, 11, 13, 8, 10], [8.0, 9, 7, 10, 11, 6, 9])
+
+
+def _equivalence():
+    # TOST equivalence — two samples, self-renders a box + per-group Q-Q.
+    return tost([10.0, 11, 9, 10, 12, 8], [10.2, 10.8, 9.1, 10.3, 11.5, 8.4], margin=2.0)
+
+
+def test_mann_whitney_conforms_to_engine_contract():
+    assert_result_conforms(_mann_whitney())
+
+
+def test_wilcoxon_conforms_to_engine_contract():
+    assert_result_conforms(_wilcoxon())
+
+
+def test_equivalence_conforms_to_engine_contract():
+    assert_result_conforms(_equivalence())
+
+
+def test_rank_and_equivalence_carry_their_samples():
+    assert len(_mann_whitney().samples) == 2  # §5b: both groups
+    assert "Differences" in _wilcoxon().samples  # §5b: paired differences
+    assert len(_equivalence().samples) == 2  # §5b: both groups
+
+
+def test_mann_whitney_self_renders_box_through_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_mann_whitney())  # NO groups=
+    assert charts[0].chart_type == "box_plot" and len(charts) == 3
+    assert all("<svg" in to_svg(c) for c in charts)
+
+
+def test_wilcoxon_self_renders_histogram_through_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_wilcoxon())  # NO data=
+    assert charts[0].chart_type == "histogram"
+    assert all("<svg" in to_svg(c) for c in charts)
+
+
+def test_equivalence_self_renders_box_through_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_equivalence())  # NO groups=
+    assert charts[0].chart_type == "box_plot" and len(charts) == 3
+    assert all("<svg" in to_svg(c) for c in charts)
 
 
 def _kaplan_meier():

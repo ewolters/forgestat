@@ -267,7 +267,7 @@ class ProportionResult(TestResult):
 
 
 @dataclass
-class EquivalenceResult:
+class EquivalenceResult(ResultMixin):
     """TOST equivalence test result."""
 
     mean_diff: float = 0.0
@@ -283,13 +283,28 @@ class EquivalenceResult:
     ci_level: float = 0.90
     effect_size: float | None = None
     assumptions: list[AssumptionCheck] = field(default_factory=list)
+    samples: dict[str, list[float]] = field(default_factory=dict)  # raw samples — views() draw from it (§5b)
 
     def to_dict(self) -> dict:
         return _to_dict(self)
 
+    @property
+    def summary(self) -> str:
+        return (f"TOST: mean diff={self.mean_diff:.3f}, margin=±{self.margin:.3f}; "
+                f"{'equivalent' if self.equivalent else 'not equivalent'} "
+                f"(p={self.p_tost:.4f})")
+
+    def to_render(self) -> ChartSpec:
+        from ._distribution_views import sample_views
+        return sample_views(self.samples, "Group Comparison")[0]
+
+    def views(self) -> list[ChartSpec]:
+        from ._distribution_views import sample_views
+        return sample_views(self.samples, "Group Comparison")
+
 
 @dataclass
-class RankTestResult(TestResult):
+class RankTestResult(TestResult, ResultMixin):
     """Non-parametric rank test result."""
 
     median1: float | None = None
@@ -297,6 +312,20 @@ class RankTestResult(TestResult):
     median_diff: float | None = None
     n1: int = 0
     n2: int | None = None
+    samples: dict[str, list[float]] = field(default_factory=dict)  # raw samples — views() draw from it (§5b)
+
+    @property
+    def summary(self) -> str:
+        return (f"{self.test_name}: stat={self.statistic:.3f}, p={self.p_value:.4f}"
+                f"{' (significant)' if self.significant else ''}")
+
+    def to_render(self) -> ChartSpec:
+        from ._distribution_views import sample_views
+        return sample_views(self.samples)[0]
+
+    def views(self) -> list[ChartSpec]:
+        from ._distribution_views import sample_views
+        return sample_views(self.samples)
 
 
 @dataclass
