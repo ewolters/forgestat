@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from forgecore import ResultMixin
+from forgecore import ChartSpec, ResultMixin
 
 
 def _to_dict(obj) -> dict:
@@ -82,7 +82,7 @@ class TTestResult(TestResult):
 
 
 @dataclass
-class AnovaResult(TestResult):
+class AnovaResult(TestResult, ResultMixin):
     """ANOVA F-test result."""
 
     df_between: float = 0.0
@@ -95,6 +95,23 @@ class AnovaResult(TestResult):
     omega_squared: float | None = None
     group_means: dict[str, float] = field(default_factory=dict)
     group_ns: dict[str, int] = field(default_factory=dict)
+    groups: dict[str, list[float]] = field(default_factory=dict)  # raw samples — views() draw from it (§5b)
+
+    @property
+    def summary(self) -> str:
+        return (f"One-way ANOVA, {len(self.group_means)} groups; "
+                f"F={self.statistic:.3f}, p={self.p_value:.4f}"
+                f"{' (significant)' if self.significant else ''}")
+
+    def to_render(self) -> ChartSpec:
+        """Primary portrait: a box plot comparing the groups."""
+        from ._distribution_views import box_views
+        return box_views(self.groups, "Group Comparison")[0]
+
+    def views(self) -> list[ChartSpec]:
+        """Box plot + a normal Q-Q per group, all from the raw samples."""
+        from ._distribution_views import box_views
+        return box_views(self.groups, "Group Comparison")
 
 
 @dataclass

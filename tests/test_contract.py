@@ -9,6 +9,7 @@ from forgecore import ChartSpec
 from forgecore.testing import assert_result_conforms
 from forgeviz.renderers import to_svg
 
+from forgestat.parametric.anova import one_way
 from forgestat.parametric.correlation import correlation
 from forgestat.regression.linear import ols
 from forgestat.regression.nonlinear import curve_fit
@@ -302,6 +303,43 @@ def test_weibull_without_times_falls_back_to_hazard():
 
     charts = charts_from_result(WeibullFit(shape=2.0, scale=100.0))
     assert len(charts) == 1
+
+
+def _anova():
+    # Three groups with clear mean separation — a real one-way ANOVA. The result
+    # carries its raw groups (§5b) so it self-renders a box plot + per-group Q-Q
+    # with no groups= kwarg (the old distribution builder needed groups=).
+    return one_way(
+        [10.0, 11, 9, 10, 12, 8],
+        [15.0, 16, 14, 15, 17, 13],
+        [20.0, 21, 19, 20, 22, 18],
+        labels=["A", "B", "C"],
+    )
+
+
+def test_anova_result_conforms_to_engine_contract():
+    assert_result_conforms(_anova())
+
+
+def test_anova_carries_its_groups():
+    r = _anova()
+    assert set(r.groups) == {"A", "B", "C"} and len(r.groups["A"]) == 6  # §5b
+
+
+def test_anova_views_are_boxplot_then_per_group_qq():
+    views = _anova().views()
+    assert views[0].chart_type == "box_plot"
+    assert len(views) == 4  # box plot + one Q-Q per group
+    assert all(isinstance(v, ChartSpec) for v in views)
+
+
+def test_anova_self_renders_through_bridge_without_groups_kwarg():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_anova())  # NO groups=
+    assert charts[0].chart_type == "box_plot"
+    assert len(charts) == 4
+    assert all("<svg" in to_svg(c) for c in charts)
 
 
 def _kaplan_meier():

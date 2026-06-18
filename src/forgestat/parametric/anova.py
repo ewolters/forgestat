@@ -85,6 +85,7 @@ def one_way(
         omega_squared=omega2,
         group_means=group_means,
         group_ns=group_ns,
+        groups={name: a.tolist() for name, a in zip(names, arrays)},
         assumptions=assumptions,
     )
 
