@@ -13,6 +13,7 @@ from forgestat.parametric.anova import one_way
 from forgestat.parametric.correlation import correlation
 from forgestat.core.types import Anova2Result, Anova2Source, ChiSquareResult, ProportionResult
 from forgestat.bayesian.tests import BayesianTestResult, bayesian_ttest_one_sample
+from forgestat.msa.gage_rr import crossed_gage_rr
 from forgestat.parametric.equivalence import tost
 from forgestat.posthoc.comparisons import dunnett, tukey_hsd
 from forgestat.parametric.ttest import one_sample, two_sample
@@ -612,6 +613,36 @@ def test_bayesian_mean_only_result_yields_no_chart():
     from forgeviz.core.bridge import charts_from_result
 
     assert charts_from_result(BayesianTestResult(test_name="r2", posterior_mean=0.42)) == []
+
+
+def _gage():
+    # Balanced crossed design: 3 parts x 2 operators x 2 reps = 12 measurements.
+    parts, operators, measurements = [], [], []
+    for p in (1, 2, 3):
+        for o in ("A", "B"):
+            for r in range(2):
+                parts.append(p)
+                operators.append(o)
+                measurements.append(10.0 + p + (0.1 if o == "B" else 0.0) + 0.05 * r)
+    return crossed_gage_rr(measurements, parts, operators)
+
+
+def test_gage_rr_conforms_to_engine_contract():
+    assert_result_conforms(_gage())
+
+
+def test_gage_rr_carries_its_raw_measurements():
+    r = _gage()
+    assert len(r.measurements) == 12 and len(r.parts) == 12 and len(r.operators) == 12  # §5b
+
+
+def test_gage_rr_self_renders_components_and_spreads_through_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_gage())  # NO measurements=/parts=/operators=
+    assert charts[0].chart_type == "bar"  # variance-components
+    assert len(charts) == 3  # components + by-part box + by-operator box
+    assert all("<svg" in to_svg(c) for c in charts)
 
 
 def _kaplan_meier():

@@ -9,11 +9,12 @@ import math
 from dataclasses import dataclass, field
 
 import numpy as np
+from forgecore import ROLE_DATA, ChartSpec, ResultMixin
 from scipy import stats
 
 
 @dataclass
-class GageRRResult:
+class GageRRResult(ResultMixin):
     """Gage R&R analysis result."""
 
     design: str  # "crossed" or "nested"
@@ -33,6 +34,40 @@ class GageRRResult:
     n_parts: int = 0
     n_replicates: int = 0
     anova_table: list[dict] = field(default_factory=list)
+    measurements: list[float] = field(default_factory=list)  # raw — by-part/operator spreads (§5b)
+    parts: list = field(default_factory=list)
+    operators: list = field(default_factory=list)
+
+    @property
+    def summary(self) -> str:
+        return f"Gage R&R ({self.design}): %GRR={self.pct_gage_rr:.1f}%, ndc={self.ndc}"
+
+    def to_render(self) -> ChartSpec:
+        """Primary portrait: the variance-components bar."""
+        spec = ChartSpec(title="Gage R&R — Variance Components", chart_type="bar",
+                         x_axis={"label": "Source"}, y_axis={"label": "% Contribution"})
+        spec.add_trace(["Repeatability", "Reproducibility", "Part-to-Part", "Total Gage R&R"],
+                       [self.pct_repeatability, self.pct_reproducibility,
+                        self.pct_part, self.pct_gage_rr],
+                       trace_type="bar", color="", role=ROLE_DATA)
+        return spec
+
+    def views(self) -> list[ChartSpec]:
+        """Components bar + measurement spread by part and by operator (box plots
+        from the raw measurements the result carries)."""
+        from ..core._distribution_views import _box_spec
+        charts = [self.to_render()]
+        if self.measurements and self.parts:
+            by_part: dict = {}
+            for m, p in zip(self.measurements, self.parts):
+                by_part.setdefault(str(p), []).append(float(m))
+            charts.append(_box_spec(by_part, "Measurements by Part"))
+        if self.measurements and self.operators:
+            by_op: dict = {}
+            for m, o in zip(self.measurements, self.operators):
+                by_op.setdefault(str(o), []).append(float(m))
+            charts.append(_box_spec(by_op, "Measurements by Operator"))
+        return charts
 
 
 def crossed_gage_rr(
@@ -171,4 +206,7 @@ def crossed_gage_rr(
         n_parts=n_parts,
         n_replicates=n_reps,
         anova_table=anova_table,
+        measurements=[float(v) for v in y],
+        parts=list(parts),
+        operators=list(operators),
     )
