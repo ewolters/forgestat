@@ -345,7 +345,7 @@ class PostHocComparison:
 
 
 @dataclass
-class PostHocResult:
+class PostHocResult(ResultMixin):
     """Result of a post-hoc multiple comparison procedure."""
 
     test_name: str  # "tukey_hsd", "dunnett", "games_howell", "dunn"
@@ -354,6 +354,21 @@ class PostHocResult:
     correction: str = ""  # "studentized_range", "bonferroni", etc.
     group_means: dict[str, float] = field(default_factory=dict)
     control_group: str | None = None  # for Dunnett
+    groups: dict[str, list[float]] = field(default_factory=dict)  # raw samples — views() draw from it (§5b)
 
     def to_dict(self) -> dict:
         return _to_dict(self)
+
+    @property
+    def summary(self) -> str:
+        n_sig = sum(1 for c in self.comparisons if c.significant)
+        return (f"{self.test_name}: {len(self.comparisons)} comparisons, "
+                f"{n_sig} significant")
+
+    def to_render(self) -> ChartSpec:
+        from ._distribution_views import box_views
+        return box_views(self.groups, "Group Comparison")[0]
+
+    def views(self) -> list[ChartSpec]:
+        from ._distribution_views import box_views
+        return box_views(self.groups, "Group Comparison")

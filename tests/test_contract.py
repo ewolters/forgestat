@@ -12,6 +12,7 @@ from forgeviz.renderers import to_svg
 from forgestat.parametric.anova import one_way
 from forgestat.parametric.correlation import correlation
 from forgestat.parametric.equivalence import tost
+from forgestat.posthoc.comparisons import dunnett, tukey_hsd
 from forgestat.parametric.ttest import one_sample, two_sample
 from forgestat.nonparametric.rank_tests import mann_whitney, wilcoxon_signed_rank
 from forgestat.regression.linear import ols
@@ -445,6 +446,45 @@ def test_equivalence_self_renders_box_through_bridge():
 
     charts = charts_from_result(_equivalence())  # NO groups=
     assert charts[0].chart_type == "box_plot" and len(charts) == 3
+    assert all("<svg" in to_svg(c) for c in charts)
+
+
+def _tukey():
+    # Post-hoc across three groups — carries its raw groups (§5b), self-renders
+    # a box plot + per-group Q-Q.
+    return tukey_hsd(
+        [10.0, 11, 9, 10, 12, 8], [15.0, 16, 14, 15, 17, 13],
+        [20.0, 21, 19, 20, 22, 18], labels=["A", "B", "C"],
+    )
+
+
+def _dunnett():
+    # Control-vs-treatments shape — control + treatments fold into groups too.
+    return dunnett(
+        [10.0, 11, 9, 10, 12, 8], [15.0, 16, 14, 15, 17, 13],
+        [20.0, 21, 19, 20, 22, 18], control_name="Ctrl",
+        treatment_names=["T1", "T2"],
+    )
+
+
+def test_tukey_conforms_to_engine_contract():
+    assert_result_conforms(_tukey())
+
+
+def test_dunnett_conforms_to_engine_contract():
+    assert_result_conforms(_dunnett())
+
+
+def test_posthoc_carries_its_groups():
+    assert set(_tukey().groups) == {"A", "B", "C"}  # §5b
+    assert set(_dunnett().groups) == {"Ctrl", "T1", "T2"}  # control folds in
+
+
+def test_tukey_self_renders_box_through_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_tukey())  # NO groups=
+    assert charts[0].chart_type == "box_plot" and len(charts) == 4  # box + 3 Q-Q
     assert all("<svg" in to_svg(c) for c in charts)
 
 

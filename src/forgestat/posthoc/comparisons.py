@@ -91,6 +91,7 @@ def tukey_hsd(
         alpha=alpha,
         correction="studentized_range",
         group_means=group_means,
+        groups={name: a.tolist() for name, a in zip(names, arrays)},
     )
 
 
@@ -170,6 +171,7 @@ def games_howell(
         alpha=alpha,
         correction="welch_studentized_range",
         group_means=group_means,
+        groups={name: a.tolist() for name, a in zip(names, arrays)},
     )
 
 
@@ -220,6 +222,8 @@ def dunnett(
             alpha=alpha,
             correction="dunnett_distribution",
             group_means=group_means,
+            groups={control_name: ctrl.tolist(),
+                    **{name: a.tolist() for name, a in zip(t_names, treat_arrays)}},
             control_group=control_name,
         )
     except (AttributeError, TypeError):
@@ -263,6 +267,8 @@ def dunnett(
         alpha=alpha,
         correction="bonferroni",
         group_means=group_means,
+        groups={control_name: ctrl.tolist(),
+                **{name: a.tolist() for name, a in zip(t_names, treat_arrays)}},
         control_group=control_name,
     )
 
@@ -337,6 +343,7 @@ def dunn(
         alpha=alpha,
         correction="bonferroni",
         group_means=group_means,
+        groups={name: a.tolist() for name, a in zip(names, arrays)},
     )
 
 
@@ -384,6 +391,7 @@ def bonferroni(
         alpha=alpha,
         correction="bonferroni",
         group_means=group_means,
+        groups={name: a.tolist() for name, a in zip(names, arrays)},
     )
 
 
@@ -442,4 +450,5 @@ def scheffe(
         alpha=alpha,
         correction="scheffe_f",
         group_means=group_means,
+        groups={name: a.tolist() for name, a in zip(names, arrays)},
     )
