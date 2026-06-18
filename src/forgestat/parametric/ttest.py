@@ -73,6 +73,7 @@ def one_sample(
         se=se,
         n1=n,
         method="one_sample",
+        samples={"Sample": x.tolist()},
         assumptions=assumptions,
     )
 
@@ -155,6 +156,7 @@ def two_sample(
         n1=n1,
         n2=n2,
         method="welch" if not equal_var else "pooled",
+        samples={"Group 1": a.tolist(), "Group 2": b.tolist()},
         assumptions=assumptions,
     )
 
@@ -218,5 +220,6 @@ def paired(
         se=se,
         n1=n,
         method="paired",
+        samples={"Group 1": a.tolist(), "Group 2": b.tolist()},
         assumptions=assumptions,
     )

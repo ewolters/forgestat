@@ -57,6 +57,18 @@ def _qq_spec(values: list[float], title: str) -> ChartSpec:
     return spec
 
 
+def _hist_spec(values: list[float], title: str) -> ChartSpec:
+    """Histogram of one sample — binned counts as a bar chart, theme-neutral."""
+    vals = [float(v) for v in values]
+    counts, edges = np.histogram(vals, bins=min(20, max(5, len(vals) // 2)))
+    centers = [f"{(edges[i] + edges[i + 1]) / 2:.3g}" for i in range(len(counts))]
+    spec = ChartSpec(title=title, chart_type="histogram",
+                     x_axis={"label": "Value"}, y_axis={"label": "Frequency"})
+    spec.add_trace(centers, counts.tolist(), trace_type="bar", color="",
+                   role=ROLE_DATA)
+    return spec
+
+
 def box_views(groups: dict[str, list[float]], title: str = "Group Comparison") -> list[ChartSpec]:
     """A box plot of the groups + a normal Q-Q for each group with >= 3 points."""
     present = {k: v for k, v in groups.items() if v}
@@ -65,3 +77,21 @@ def box_views(groups: dict[str, list[float]], title: str = "Group Comparison") -
         if len(vals) >= 3:
             views.append(_qq_spec(vals, f"Normal Q-Q — {name}"))
     return views
+
+
+def histogram_views(values: list[float], title: str = "Distribution") -> list[ChartSpec]:
+    """A histogram of one sample + a normal Q-Q (>= 3 points)."""
+    views = [_hist_spec(values, title)]
+    if len(values) >= 3:
+        views.append(_qq_spec(values, "Normal Q-Q Plot"))
+    return views
+
+
+def sample_views(samples: dict[str, list[float]], title: str = "Distribution") -> list[ChartSpec]:
+    """Shape by sample count: >= 2 groups -> box plot; one sample -> histogram."""
+    present = {k: v for k, v in samples.items() if v}
+    if len(present) >= 2:
+        return box_views(present, title)
+    if len(present) == 1:
+        return histogram_views(next(iter(present.values())), title)
+    return [ChartSpec(title=title, chart_type="histogram")]

@@ -11,6 +11,7 @@ from forgeviz.renderers import to_svg
 
 from forgestat.parametric.anova import one_way
 from forgestat.parametric.correlation import correlation
+from forgestat.parametric.ttest import one_sample, two_sample
 from forgestat.regression.linear import ols
 from forgestat.regression.nonlinear import curve_fit
 from forgestat.reliability.distributions import WeibullFit, weibull_fit
@@ -340,6 +341,52 @@ def test_anova_self_renders_through_bridge_without_groups_kwarg():
     assert charts[0].chart_type == "box_plot"
     assert len(charts) == 4
     assert all("<svg" in to_svg(c) for c in charts)
+
+
+def _ttest_two():
+    # Two-sample t-test — a group comparison; carries both samples (§5b) and
+    # self-renders a box plot + per-group Q-Q with no groups= kwarg.
+    return two_sample([10.0, 11, 9, 10, 12, 8], [15.0, 16, 14, 15, 17, 13])
+
+
+def _ttest_one():
+    # One-sample t-test — a single sample; self-renders a histogram + Q-Q.
+    return one_sample([10.0, 11, 9, 10, 12, 8, 11, 9, 10, 11], mu=8.0)
+
+
+def test_ttest_two_sample_conforms_to_engine_contract():
+    assert_result_conforms(_ttest_two())
+
+
+def test_ttest_one_sample_conforms_to_engine_contract():
+    assert_result_conforms(_ttest_one())
+
+
+def test_ttest_carries_its_samples():
+    assert len(_ttest_two().samples) == 2  # §5b: both groups
+    assert len(_ttest_one().samples) == 1  # §5b: the single sample
+
+
+def test_ttest_two_sample_views_are_boxplot_then_qq():
+    views = _ttest_two().views()
+    assert views[0].chart_type == "box_plot"
+    assert len(views) == 3  # box plot + one Q-Q per group
+
+
+def test_ttest_one_sample_views_are_histogram_then_qq():
+    views = _ttest_one().views()
+    assert views[0].chart_type == "histogram"
+    assert len(views) == 2  # histogram + Q-Q
+
+
+def test_ttest_self_renders_through_bridge_without_kwargs():
+    from forgeviz.core.bridge import charts_from_result
+
+    two = charts_from_result(_ttest_two())  # NO groups=
+    assert two[0].chart_type == "box_plot" and len(two) == 3
+    one = charts_from_result(_ttest_one())  # NO data=
+    assert one[0].chart_type == "histogram" and len(one) == 2
+    assert all("<svg" in to_svg(c) for c in two + one)
 
 
 def _kaplan_meier():

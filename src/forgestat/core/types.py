@@ -70,7 +70,7 @@ class TestResult:
 
 
 @dataclass
-class TTestResult(TestResult):
+class TTestResult(TestResult, ResultMixin):
     """One-sample, two-sample, or paired t-test result."""
 
     mean1: float = 0.0
@@ -79,6 +79,22 @@ class TTestResult(TestResult):
     se: float = 0.0
     n1: int = 0
     n2: int | None = None
+    samples: dict[str, list[float]] = field(default_factory=dict)  # raw samples — views() draw from it (§5b)
+
+    @property
+    def summary(self) -> str:
+        return (f"{self.test_name}: t={self.statistic:.3f}, p={self.p_value:.4f}"
+                f"{' (significant)' if self.significant else ''}")
+
+    def to_render(self) -> ChartSpec:
+        """Primary portrait: box plot (two-sample) or histogram (one-sample)."""
+        from ._distribution_views import sample_views
+        return sample_views(self.samples)[0]
+
+    def views(self) -> list[ChartSpec]:
+        """Full portrait from the raw samples, shaped by sample count."""
+        from ._distribution_views import sample_views
+        return sample_views(self.samples)
 
 
 @dataclass
