@@ -8,11 +8,12 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+from forgecore import ROLE_CENTERLINE, ROLE_CONTROL_LIMIT, ROLE_DATA, ChartSpec, ResultMixin
 from scipy import stats
 
 
 @dataclass
-class PowerResult:
+class PowerResult(ResultMixin):
     """Power analysis result."""
 
     test: str
@@ -21,9 +22,79 @@ class PowerResult:
     alpha: float = 0.05
     effect_size: float = 0.0
     detail: dict = field(default_factory=dict)
+    power_curve: dict = field(default_factory=dict)
+
+    @property
+    def summary(self) -> str:
+        return (f"{self.test}: power={self.power:.3f} at n={self.sample_size} "
+                f"(alpha={self.alpha}, effect={self.effect_size:.3f})")
+
+    def to_render(self) -> ChartSpec:
+        """The power-vs-sample-size curve the solver swept onto this result."""
+        spec = ChartSpec(title="Power Curve", chart_type="line",
+                         x_axis={"label": "Sample size (n)"}, y_axis={"label": "Power"})
+        ns = self.power_curve.get("n") or []
+        powers = self.power_curve.get("power") or []
+        if not ns or not powers:
+            return spec
+        spec.add_trace(ns, powers, name="Power", trace_type="line", color="", role=ROLE_DATA)
+        target = self.power_curve.get("target_power")
+        if target:
+            spec.add_reference_line(float(target), axis="y", dash="dashed",
+                                    label=f"target {float(target):.0%}", role=ROLE_CONTROL_LIMIT)
+        solved = self.power_curve.get("solved_n")
+        if solved:
+            spec.add_reference_line(float(solved), axis="x", dash="dotted",
+                                    label=f"n = {int(solved)}", role=ROLE_CENTERLINE)
+        return spec
+
+
+def _sweep(impl, base_kwargs, n_param, n_center, target_power) -> dict:
+    """Sweep computed power across sample sizes centred on the solved n.
+
+    Re-calls impl in power-mode (power=None) so each point is real computed
+    power. impl is the recursion-free body, so the sweep never re-sweeps.
+    """
+    n_center = int(n_center or 0)
+    if n_center <= 1:
+        return {}
+    lo = max(2, int(n_center * 0.3))
+    hi = int(n_center * 2.5) + 2
+    step = max(1, (hi - lo) // 18)
+    ns, powers = [], []
+    for nn in range(lo, hi + 1, step):
+        try:
+            kw = dict(base_kwargs)
+            kw[n_param] = nn
+            kw["power"] = None
+            pw = float(impl(**kw).power)
+        except Exception:
+            continue
+        ns.append(nn)
+        powers.append(pw)
+    if len(ns) < 2:
+        return {}
+    return {"n": ns, "power": powers, "solved_n": n_center, "target_power": target_power}
 
 
 def power_t_test(
+    effect_size: float,
+    n: int | None = None,
+    alpha: float = 0.05,
+    power: float | None = None,
+    alternative: str = "two-sided",
+    test_type: str = "one_sample",
+) -> PowerResult:
+    """Power or sample size for t-tests, with a swept power-vs-n curve attached."""
+    result = _power_t_test_impl(effect_size, n=n, alpha=alpha, power=power,
+                                alternative=alternative, test_type=test_type)
+    base = {"effect_size": effect_size, "alpha": alpha,
+            "alternative": alternative, "test_type": test_type}
+    result.power_curve = _sweep(_power_t_test_impl, base, "n", result.sample_size, power)
+    return result
+
+
+def _power_t_test_impl(
     effect_size: float,
     n: int | None = None,
     alpha: float = 0.05,
@@ -66,7 +137,7 @@ def power_t_test(
     elif power is not None:
         # Compute sample size via search
         for n_try in range(2, 10000):
-            result = power_t_test(d, n=n_try, alpha=alpha, alternative=alternative, test_type=test_type)
+            result = _power_t_test_impl(d, n=n_try, alpha=alpha, alternative=alternative, test_type=test_type)
             if result.power >= power:
                 return PowerResult(test=f"t_test_{test_type}", power=result.power, sample_size=n_try,
                                    alpha=alpha, effect_size=d)
@@ -78,6 +149,20 @@ def power_t_test(
 
 
 def power_anova(
+    effect_size: float,
+    k: int,
+    n_per_group: int | None = None,
+    alpha: float = 0.05,
+    power: float | None = None,
+) -> PowerResult:
+    """Power or sample size for one-way ANOVA, with a swept power-vs-n curve attached."""
+    result = _power_anova_impl(effect_size, k, n_per_group=n_per_group, alpha=alpha, power=power)
+    base = {"effect_size": effect_size, "k": k, "alpha": alpha}
+    result.power_curve = _sweep(_power_anova_impl, base, "n_per_group", result.sample_size, power)
+    return result
+
+
+def _power_anova_impl(
     effect_size: float,
     k: int,
     n_per_group: int | None = None,
@@ -108,7 +193,7 @@ def power_anova(
 
     elif power is not None:
         for n_try in range(2, 5000):
-            result = power_anova(f, k, n_per_group=n_try, alpha=alpha)
+            result = _power_anova_impl(f, k, n_per_group=n_try, alpha=alpha)
             if result.power >= power:
                 return PowerResult(test="anova", power=result.power, sample_size=n_try,
                                    alpha=alpha, effect_size=f, detail={"k": k, "total_n": k * n_try})
@@ -120,6 +205,21 @@ def power_anova(
 
 
 def power_proportion(
+    p1: float,
+    p2: float | None = None,
+    p0: float | None = None,
+    n: int | None = None,
+    alpha: float = 0.05,
+    power: float | None = None,
+) -> PowerResult:
+    """Power or sample size for proportion test, with a swept power-vs-n curve attached."""
+    result = _power_proportion_impl(p1, p2=p2, p0=p0, n=n, alpha=alpha, power=power)
+    base = {"p1": p1, "p2": p2, "p0": p0, "alpha": alpha}
+    result.power_curve = _sweep(_power_proportion_impl, base, "n", result.sample_size, power)
+    return result
+
+
+def _power_proportion_impl(
     p1: float,
     p2: float | None = None,
     p0: float | None = None,
@@ -161,10 +261,10 @@ def power_proportion(
         z_b = stats.norm.ppf(power)
         n_est = math.ceil(((z_a + z_b) / h) ** 2) if h > 0 else 10000
         # Verify
-        result = power_proportion(p1, p2=p2, p0=p0, n=n_est, alpha=alpha)
+        result = _power_proportion_impl(p1, p2=p2, p0=p0, n=n_est, alpha=alpha)
         while result.power < power and n_est < 100000:
             n_est += 1
-            result = power_proportion(p1, p2=p2, p0=p0, n=n_est, alpha=alpha)
+            result = _power_proportion_impl(p1, p2=p2, p0=p0, n=n_est, alpha=alpha)
         return PowerResult(test="proportion", power=result.power, sample_size=n_est,
                            alpha=alpha, effect_size=h)
 
@@ -172,6 +272,20 @@ def power_proportion(
 
 
 def power_chi_square(
+    effect_size: float,
+    df: int,
+    n: int | None = None,
+    alpha: float = 0.05,
+    power: float | None = None,
+) -> PowerResult:
+    """Power or sample size for chi-square test, with a swept power-vs-n curve attached."""
+    result = _power_chi_square_impl(effect_size, df, n=n, alpha=alpha, power=power)
+    base = {"effect_size": effect_size, "df": df, "alpha": alpha}
+    result.power_curve = _sweep(_power_chi_square_impl, base, "n", result.sample_size, power)
+    return result
+
+
+def _power_chi_square_impl(
     effect_size: float,
     df: int,
     n: int | None = None,
@@ -198,7 +312,7 @@ def power_chi_square(
 
     elif power is not None:
         for n_try in range(10, 100000, 5):
-            result = power_chi_square(w, df, n=n_try, alpha=alpha)
+            result = _power_chi_square_impl(w, df, n=n_try, alpha=alpha)
             if result.power >= power:
                 return PowerResult(test="chi_square", power=result.power, sample_size=n_try,
                                    alpha=alpha, effect_size=w, detail={"df": df})
@@ -262,6 +376,20 @@ def power_equivalence(
     alpha: float = 0.05,
     power: float | None = None,
 ) -> PowerResult:
+    """Power for TOST equivalence test, with a swept power-vs-n curve attached."""
+    result = _power_equivalence_impl(effect_size, margin, n=n, alpha=alpha, power=power)
+    base = {"effect_size": effect_size, "margin": margin, "alpha": alpha}
+    result.power_curve = _sweep(_power_equivalence_impl, base, "n", result.sample_size, power)
+    return result
+
+
+def _power_equivalence_impl(
+    effect_size: float,
+    margin: float,
+    n: int | None = None,
+    alpha: float = 0.05,
+    power: float | None = None,
+) -> PowerResult:
     """Power for TOST equivalence test.
 
     Args:
@@ -282,7 +410,7 @@ def power_equivalence(
 
     elif power is not None:
         for n_try in range(4, 10000):
-            result = power_equivalence(effect_size, margin, n=n_try, alpha=alpha)
+            result = _power_equivalence_impl(effect_size, margin, n=n_try, alpha=alpha)
             if result.power >= power:
                 return PowerResult(test="equivalence", power=result.power, sample_size=n_try,
                                    alpha=alpha, effect_size=effect_size, detail={"margin": margin})

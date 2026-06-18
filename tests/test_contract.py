@@ -663,3 +663,41 @@ def test_kaplan_meier_self_renders_survival_curve_through_bridge():
     charts = charts_from_result(_kaplan_meier())
     assert len(charts) == 1
     assert "<svg" in to_svg(charts[0])
+
+
+# Power family. §5b: the power fn sweeps its own calculation across sample
+# sizes and attaches the curve as result.power_curve, so PowerResult
+# self-renders the power-vs-n curve with no chart_ctx/power_curve= kwarg.
+from forgestat.power.sample_size import PowerResult, power_t_test
+
+
+def test_power_result_conforms_to_engine_contract():
+    assert_result_conforms(power_t_test(0.5, power=0.8))
+
+
+def test_power_result_carries_its_own_curve():
+    result = power_t_test(0.5, power=0.8)
+    assert result.power_curve["n"]
+    assert len(result.power_curve["n"]) == len(result.power_curve["power"])
+    assert result.power_curve["solved_n"] == result.sample_size
+    assert result.power_curve["target_power"] == 0.8
+
+
+def test_power_self_renders_curve_through_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(power_t_test(0.5, power=0.8))
+    assert len(charts) == 1
+    assert charts[0].traces  # the power-vs-n line
+    assert "<svg" in to_svg(charts[0])
+
+
+def test_power_curve_draws_target_and_solved_reference_lines():
+    spec = power_t_test(0.5, power=0.8).to_render()
+    assert len(spec.reference_lines) == 2  # target power (y) + solved n (x)
+
+
+def test_power_in_power_mode_still_self_renders():
+    # Given n (not a target power), the result still sweeps a curve centred on n.
+    spec = power_t_test(0.5, n=30).to_render()
+    assert spec.traces
