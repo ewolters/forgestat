@@ -11,6 +11,7 @@ from forgeviz.renderers import to_svg
 
 from forgestat.parametric.anova import one_way
 from forgestat.parametric.correlation import correlation
+from forgestat.core.types import Anova2Result, Anova2Source, ChiSquareResult, ProportionResult
 from forgestat.parametric.equivalence import tost
 from forgestat.posthoc.comparisons import dunnett, tukey_hsd
 from forgestat.parametric.ttest import one_sample, two_sample
@@ -486,6 +487,56 @@ def test_tukey_self_renders_box_through_bridge():
     charts = charts_from_result(_tukey())  # NO groups=
     assert charts[0].chart_type == "box_plot" and len(charts) == 4  # box + 3 Q-Q
     assert all("<svg" in to_svg(c) for c in charts)
+
+
+def _chi_square():
+    # Field-only: the result already carries observed/expected — no raw arrays.
+    return ChiSquareResult(
+        test_name="Chi-square", statistic=8.0, p_value=0.018,
+        observed=[[10.0, 20.0], [30.0, 15.0]], expected=[[15.0, 15.0], [25.0, 20.0]],
+        row_labels=["R1", "R2"], col_labels=["C1", "C2"], cramers_v=0.3,
+    )
+
+
+def _proportion():
+    return ProportionResult(
+        test_name="2-proportion z-test", statistic=2.1, p_value=0.036,
+        p_hat=0.6, p_hat2=0.45, p_diff=0.15, n1=100, n2=120,
+    )
+
+
+def _anova2():
+    return Anova2Result(sources=[
+        Anova2Source("A", f_statistic=5.0, p_value=0.03, partial_eta_sq=0.20),
+        Anova2Source("B", f_statistic=2.0, p_value=0.18, partial_eta_sq=0.10),
+        Anova2Source("A:B", f_statistic=1.2, p_value=0.31, partial_eta_sq=0.05),
+    ], residual_df=20.0, residual_ss=40.0, residual_ms=2.0)
+
+
+def test_chi_square_conforms_to_engine_contract():
+    assert_result_conforms(_chi_square())
+
+
+def test_proportion_conforms_to_engine_contract():
+    assert_result_conforms(_proportion())
+
+
+def test_anova2_conforms_to_engine_contract():
+    assert_result_conforms(_anova2())
+
+
+def test_categorical_results_render_their_field_only_views():
+    assert _chi_square().to_render().chart_type == "heatmap"
+    assert _proportion().to_render().chart_type == "bar"
+    assert _anova2().to_render().chart_type == "bar"
+
+
+def test_categorical_results_self_render_through_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    for r in (_chi_square(), _proportion(), _anova2()):
+        charts = charts_from_result(r)  # NO kwargs
+        assert len(charts) == 1 and "<svg" in to_svg(charts[0])
 
 
 def _kaplan_meier():

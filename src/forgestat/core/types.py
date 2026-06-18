@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from forgecore import ChartSpec, ResultMixin
+from forgecore import ROLE_DATA, ChartSpec, ResultMixin
 
 
 def _to_dict(obj) -> dict:
@@ -131,7 +131,7 @@ class AnovaResult(TestResult, ResultMixin):
 
 
 @dataclass
-class Anova2Result:
+class Anova2Result(ResultMixin):
     """Two-way ANOVA result."""
 
     sources: list[Anova2Source] = field(default_factory=list)
@@ -142,6 +142,20 @@ class Anova2Result:
 
     def to_dict(self) -> dict:
         return _to_dict(self)
+
+    @property
+    def summary(self) -> str:
+        n_sig = sum(1 for s in self.sources if s.p_value < 0.05)
+        return f"Two-way ANOVA: {len(self.sources)} sources, {n_sig} significant"
+
+    def to_render(self) -> ChartSpec:
+        """Field-only: bar of partial η² by source (A, B, A:B)."""
+        spec = ChartSpec(title="Effect Sizes (partial η²)", chart_type="bar",
+                         x_axis={"label": "Source"}, y_axis={"label": "Partial η²"})
+        spec.add_trace([s.source for s in self.sources],
+                       [s.partial_eta_sq for s in self.sources],
+                       trace_type="bar", color="", role=ROLE_DATA)
+        return spec
 
 
 @dataclass
@@ -245,7 +259,7 @@ class CorrelationPair:
 
 
 @dataclass
-class ChiSquareResult(TestResult):
+class ChiSquareResult(TestResult, ResultMixin):
     """Chi-square test result."""
 
     observed: list[list[float]] = field(default_factory=list)
@@ -254,9 +268,23 @@ class ChiSquareResult(TestResult):
     col_labels: list[str] = field(default_factory=list)
     cramers_v: float = 0.0
 
+    @property
+    def summary(self) -> str:
+        return (f"Chi-square: χ²={self.statistic:.3f}, p={self.p_value:.4f}, "
+                f"Cramér's V={self.cramers_v:.3f}")
+
+    def to_render(self) -> ChartSpec:
+        """Field-only: heatmap of the observed contingency table."""
+        rows = self.row_labels or [f"R{i+1}" for i in range(len(self.observed))]
+        cols = self.col_labels or [f"C{j+1}" for j in range(len(self.observed[0]) if self.observed else 0)]
+        spec = ChartSpec(title="Contingency Table (observed)", chart_type="heatmap",
+                         x_axis={"label": ""}, y_axis={"label": ""})
+        spec.traces.append({"type": "heatmap", "x": cols, "y": rows, "z": self.observed})
+        return spec
+
 
 @dataclass
-class ProportionResult(TestResult):
+class ProportionResult(TestResult, ResultMixin):
     """Proportion test result (1-sample or 2-sample)."""
 
     p_hat: float = 0.0
@@ -264,6 +292,22 @@ class ProportionResult(TestResult):
     p_diff: float | None = None
     n1: int = 0
     n2: int | None = None
+
+    @property
+    def summary(self) -> str:
+        base = f"{self.test_name}: p̂={self.p_hat:.3f}"
+        return base + (f" vs {self.p_hat2:.3f}" if self.p_hat2 is not None else "")
+
+    def to_render(self) -> ChartSpec:
+        """Field-only: bar of the estimated proportion(s)."""
+        names, vals = ["Group 1"], [self.p_hat]
+        if self.p_hat2 is not None:
+            names.append("Group 2")
+            vals.append(self.p_hat2)
+        spec = ChartSpec(title="Proportions", chart_type="bar",
+                         x_axis={"label": ""}, y_axis={"label": "Proportion"})
+        spec.add_trace(names, vals, trace_type="bar", color="", role=ROLE_DATA)
+        return spec
 
 
 @dataclass
