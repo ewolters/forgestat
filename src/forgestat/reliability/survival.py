@@ -9,6 +9,7 @@ import math
 from dataclasses import dataclass, field
 
 import numpy as np
+from forgecore import ResultMixin
 from scipy import stats
 
 
@@ -27,7 +28,7 @@ class SurvivalPoint:
 
 
 @dataclass
-class KaplanMeierResult:
+class KaplanMeierResult(ResultMixin):
     """Kaplan-Meier survival analysis result."""
 
     curve: list[SurvivalPoint] = field(default_factory=list)
@@ -36,6 +37,30 @@ class KaplanMeierResult:
     n_events: int = 0
     n_censored: int = 0
     n_total: int = 0
+
+    @property
+    def summary(self) -> str:
+        med = f"{self.median_survival:.3g}" if self.median_survival is not None else "n/a"
+        return (f"KM survival: n={self.n_total}, {self.n_events} events, "
+                f"{self.n_censored} censored, median={med}")
+
+    def to_render(self):
+        """Primary portrait: the step survival curve the estimator already
+        computed (field-only — no raw times needed)."""
+        from forgecore import ROLE_CENTERLINE, ROLE_DATA, ChartSpec
+
+        spec = ChartSpec(title="Survival Curve", chart_type="line",
+                         x_axis={"label": "Time"}, y_axis={"label": "Survival Probability"})
+        xs, ys = [0.0], [1.0]
+        for pt in self.curve:
+            xs.append(pt.time)
+            ys.append(pt.survival)
+        spec.add_trace(xs, ys, name="Survival", trace_type="step", color="", role=ROLE_DATA)
+        spec.add_reference_line(0.5, axis="y", dash="dotted", color="", role=ROLE_CENTERLINE)
+        return spec
+
+    def views(self) -> list:
+        return [self.to_render()]
 
 
 @dataclass

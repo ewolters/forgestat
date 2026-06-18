@@ -9,11 +9,12 @@ import math
 from dataclasses import dataclass, field
 
 import numpy as np
+from forgecore import ResultMixin
 from scipy import stats
 
 
 @dataclass
-class WeibullFit:
+class WeibullFit(ResultMixin):
     """Weibull distribution fit result."""
 
     shape: float = 0.0  # β (shape/slope)
@@ -25,6 +26,81 @@ class WeibullFit:
     ks_statistic: float = 0.0
     ks_p_value: float = 0.0
     failure_mode: str = ""  # "infant_mortality", "random", "wear_out"
+    failure_times: list[float] = field(default_factory=list)  # raw sample — views() draw from it (§5b)
+
+    @property
+    def summary(self) -> str:
+        return (f"Weibull beta={self.shape:.2f}, eta={self.scale:.1f}; "
+                f"{self.failure_mode or 'n/a'} (B10={self.b10_life:.1f})")
+
+    def _probability_plot(self):
+        """Linearized Weibull CDF: ln(t) vs ln(-ln(1-F)) + the fitted line."""
+        from forgecore import ROLE_CONTROL_LIMIT, ROLE_DATA, ChartSpec
+
+        spec = ChartSpec(title="Weibull Probability Plot", chart_type="scatter",
+                         x_axis={"label": "ln(Time)"}, y_axis={"label": "ln(-ln(1-F))"})
+        times = sorted(t for t in self.failure_times if t > 0)
+        if not times:
+            return spec
+        n = len(times)
+        ranks = [(i - 0.3) / (n + 0.4) for i in range(1, n + 1)]  # Bernard's median rank
+        x = [math.log(t) for t in times]
+        y = [math.log(-math.log(1 - r)) if r < 1 else 5.0 for r in ranks]
+        spec.add_trace(x, y, name="Data", trace_type="scatter", color="", role=ROLE_DATA)
+        if self.scale > 0:
+            ends = [min(x), max(x)]
+            spec.add_trace(ends, [self.shape * (xv - math.log(self.scale)) for xv in ends],
+                           name="Fit", trace_type="line", dash="dashed", color="",
+                           role=ROLE_CONTROL_LIMIT)
+        return spec
+
+    def _survival_curve(self):
+        """Empirical product-limit survival from the failure sample."""
+        from forgecore import ROLE_CENTERLINE, ROLE_DATA, ChartSpec
+
+        spec = ChartSpec(title="Survival Curve", chart_type="line",
+                         x_axis={"label": "Time"}, y_axis={"label": "Survival Probability"})
+        times = sorted(self.failure_times)
+        if not times:
+            return spec
+        at_risk, s = len(times), 1.0
+        xs, ys = [0.0], [1.0]
+        for t in times:
+            s *= (at_risk - 1) / at_risk if at_risk > 0 else 0.0
+            xs.append(t)
+            ys.append(s)
+            at_risk -= 1
+        xs.append(times[-1] * 1.1)
+        ys.append(s)
+        spec.add_trace(xs, ys, name="Survival", trace_type="step", color="", role=ROLE_DATA)
+        spec.add_reference_line(0.5, axis="y", dash="dotted", color="", role=ROLE_CENTERLINE)
+        return spec
+
+    def _hazard(self):
+        """Bathtub hazard h(t) = (beta/eta)*(t/eta)^(beta-1) from the parameters."""
+        from forgecore import ROLE_DATA, ChartSpec
+
+        spec = ChartSpec(title="Hazard Function", chart_type="line",
+                         x_axis={"label": "Time"}, y_axis={"label": "Hazard Rate h(t)"})
+        max_time = self.scale * 3 if self.scale > 0 else 1.0
+        times = [max_time * i / 100 for i in range(1, 101)]
+        hz = [(self.shape / self.scale) * (t / self.scale) ** (self.shape - 1)
+              if (t > 0 and self.scale > 0) else 0.0 for t in times]
+        spec.add_trace(times, hz, name="Hazard", trace_type="line", color="", role=ROLE_DATA)
+        return spec
+
+    def to_render(self):
+        """Primary portrait: the probability plot (hazard alone without a sample)."""
+        return self._probability_plot() if self.failure_times else self._hazard()
+
+    def views(self) -> list:
+        """Complete portrait: probability plot + survival + hazard (hazard-only
+        when the fit carries no sample)."""
+        if self.failure_times:
+            return [self._probability_plot(), self._survival_curve(), self._hazard()]
+        if self.shape and self.scale:
+            return [self._hazard()]
+        return [self.to_render()]
 
 
 @dataclass
@@ -128,6 +204,7 @@ def weibull_fit(
         ks_statistic=float(ks_stat),
         ks_p_value=float(ks_p),
         failure_mode=mode,
+        failure_times=times.tolist(),  # §5b: views() draw the prob-plot + survival from it
     )
 
 

@@ -12,6 +12,8 @@ from forgeviz.renderers import to_svg
 from forgestat.parametric.correlation import correlation
 from forgestat.regression.linear import ols
 from forgestat.regression.nonlinear import curve_fit
+from forgestat.reliability.distributions import WeibullFit, weibull_fit
+from forgestat.reliability.survival import kaplan_meier
 from forgestat.timeseries.causality import GrangerResult
 from forgestat.timeseries.changepoint import pelt
 from forgestat.timeseries.correlation import ACFResult, CCFResult
@@ -269,3 +271,54 @@ def test_correlation_three_vars_self_renders_scatter_matrix_via_bridge():
     charts = charts_from_result(_corr_multi())  # NO data_dict=
     assert len(charts) == 9  # 3x3 matrix: diagonal histograms + off-diagonal scatters
     assert all("<svg" in to_svg(c) for c in charts)
+
+
+def _weibull():
+    # Real Weibull fit — the result is data-context: it now carries the raw
+    # failure_times (§5b) so the probability plot + survival curve self-render
+    # with no failure_times= kwarg.
+    return weibull_fit([10.0, 22, 35, 41, 58, 70, 85, 95, 110, 130])
+
+
+def test_weibull_result_conforms_to_engine_contract():
+    assert_result_conforms(_weibull())
+
+
+def test_weibull_carries_its_failure_times():
+    assert len(_weibull().failure_times) == 10  # §5b
+
+
+def test_weibull_self_renders_full_panel_through_bridge():
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_weibull())  # NO failure_times= kwarg
+    assert len(charts) == 3  # probability plot + survival + hazard
+    assert all("<svg" in to_svg(c) for c in charts)
+
+
+def test_weibull_without_times_falls_back_to_hazard():
+    # Parameters alone (no sample) still draw the hazard (bathtub) curve.
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(WeibullFit(shape=2.0, scale=100.0))
+    assert len(charts) == 1
+
+
+def _kaplan_meier():
+    times = [5.0, 10, 15, 20, 25, 30, 40, 50, 60, 75]
+    events = [True, True, False, True, True, False, True, True, False, True]
+    return kaplan_meier(times, events)
+
+
+def test_kaplan_meier_result_conforms_to_engine_contract():
+    assert_result_conforms(_kaplan_meier())
+
+
+def test_kaplan_meier_self_renders_survival_curve_through_bridge():
+    # Field-only: KM already carries its computed curve (time, survival), so it
+    # self-renders with no failure_times=/censored= kwargs.
+    from forgeviz.core.bridge import charts_from_result
+
+    charts = charts_from_result(_kaplan_meier())
+    assert len(charts) == 1
+    assert "<svg" in to_svg(charts[0])
